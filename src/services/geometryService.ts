@@ -1,6 +1,7 @@
 
 import { Waypoint, Route, FlightSettings, DRONE_PRESETS, RouteStats } from '../types';
 import * as turf from '@turf/turf';
+import { polygon as createPolygon, lineString as createLineString, point as createPoint, points as createPoints } from '@turf/helpers';
 
 /**
  * Converts degrees to radians
@@ -115,6 +116,40 @@ export const calculatePhotoInterval = (
 };
 
 /**
+ * Calculate Ground Sampling Distance (cm/px)
+ */
+export const calculateGSD = (
+    altitude: number, 
+    sensorWidthMm: number, 
+    imageWidthPx: number,
+    focalLengthMm: number
+): number => {
+    // Standard Photogrammetry Formula:
+    // GSD (cm/px) = (Sensor Width (mm) * Altitude (m) * 100) / (Focal Length (mm) * Image Width (px))
+    
+    if (focalLengthMm <= 0 || imageWidthPx <= 0) return 0;
+    
+    const gsd = (sensorWidthMm * altitude * 100) / (focalLengthMm * imageWidthPx);
+    return gsd;
+}
+
+// Helper to project lat/lon to local cartesian (meters) relative to a center point
+const projectToLocalCartesian = (lat: number, lng: number, centerLat: number, centerLng: number) => {
+    const R = 6371e3;
+    const x = toRad(lng - centerLng) * Math.cos(toRad(centerLat)) * R;
+    const y = toRad(lat - centerLat) * R;
+    return { x, y };
+};
+
+// Helper to project local cartesian back to lat/lon
+const projectFromLocalCartesian = (x: number, y: number, centerLat: number, centerLng: number) => {
+    const R = 6371e3;
+    const lat = centerLat + toDeg(y / R);
+    const lng = centerLng + toDeg(x / (R * Math.cos(toRad(centerLat))));
+    return { lat, lng };
+};
+
+/**
  * Robust Grid Generation for Mapping
  */
 export const generateGridWaypoints = (
@@ -122,123 +157,142 @@ export const generateGridWaypoints = (
   settings: FlightSettings,
   rotationAngle: number
 ): { lat: number; lng: number }[] => {
-    // 1. Convert inputs to Turf Polygon
     if (polygonCoords.length < 3) return polygonCoords;
     
-    // Ensure closed loop
-    const coords = polygonCoords.map(p => [p.lng, p.lat]);
-    if (coords[0][0] !== coords[coords.length-1][0] || coords[0][1] !== coords[coords.length-1][1]) {
-        coords.push(coords[0]);
+    // 1. Calculate Centroid
+    // We use Turf to get a rough centroid for projection center
+    const turfPolyCoords = polygonCoords.map(p => [p.lng, p.lat]);
+    if (turfPolyCoords[0][0] !== turfPolyCoords[turfPolyCoords.length-1][0]) {
+        turfPolyCoords.push(turfPolyCoords[0]);
     }
-    const polygon = turf.polygon([coords]);
+    const turfPoly = createPolygon([turfPolyCoords]);
+    const centroid = turf.centroid(turfPoly);
+    const centerLng = centroid.geometry.coordinates[0];
+    const centerLat = centroid.geometry.coordinates[1];
 
-    // 2. Calculate Centroid for Rotation pivot
-    const centroid = turf.centroid(polygon);
+    // 2. Project Polygon to Local Cartesian (Meters)
+    // This removes aspect ratio distortion from Lat/Lon when rotating
+    const projectedCoords = polygonCoords.map(p => projectToLocalCartesian(p.lat, p.lng, centerLat, centerLng));
     
-    // 3. Rotate Polygon to align with X-axis (0 deg) temporarily
-    // We rotate by -rotationAngle so we can generate horizontal scanlines easily
-    const rotatedPoly = turf.transformRotate(polygon, -rotationAngle, { pivot: centroid });
+    // 3. Rotate Polygon in Metric Space around (0,0)
+    // -Angle because we want to align the scanlines (which we generate horizontally) with the polygon's intended angle
+    const rad = toRad(-rotationAngle);
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
 
-    // 4. Get Bounding Box of aligned polygon
-    const bbox = turf.bbox(rotatedPoly); // [minX, minY, maxX, maxY]
+    const rotatedCoords = projectedCoords.map(p => ({
+        x: p.x * cos - p.y * sin,
+        y: p.x * sin + p.y * cos
+    }));
 
-    // 5. Calculate Spacing based on Settings
+    // 4. Bounding Box of Rotated Metric Polygon
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    rotatedCoords.forEach(p => {
+        if(p.x < minX) minX = p.x;
+        if(p.x > maxX) maxX = p.x;
+        if(p.y < minY) minY = p.y;
+        if(p.y > maxY) maxY = p.y;
+    });
+
+    // 5. Calculate Spacing
     const drone = DRONE_PRESETS.find(d => d.model === settings.selectedDroneModel) || DRONE_PRESETS[0];
     const altitude = settings.altitude;
     
     // Footprint Dimensions on Ground (meters)
     const fovHRad = (drone.fovH * Math.PI) / 180;
     const footprintWidth = 2 * altitude * Math.tan(fovHRad / 2); // Lateral coverage
-    
     const fovVRad = (drone.fovV * Math.PI) / 180;
     const footprintHeight = 2 * altitude * Math.tan(fovVRad / 2); // Forward coverage
 
     // Lateral Spacing (Distance between lines)
     const overlapHDecimal = settings.mappingOverlapH / 100;
-    const laneSpacingMeters = footprintWidth * (1 - overlapHDecimal);
+    const laneSpacing = footprintWidth * (1 - overlapHDecimal);
 
-    // Longitudinal Spacing (Distance between photos for densification)
+    // Longitudinal Spacing (Distance between photos)
     const overlapVDecimal = settings.mappingOverlap / 100;
-    const photoSpacingMeters = footprintHeight * (1 - overlapVDecimal);
+    const photoSpacing = footprintHeight * (1 - overlapVDecimal);
 
-    // 6. Convert Spacing to Degrees (Approximate)
-    // We assume spherical approximation locally which is fine for drone fields
-    // At equator 1 deg lat = 111km. 
-    const metersPerDegLat = 111320;
-    const laneSpacingDeg = laneSpacingMeters / metersPerDegLat;
+    if (laneSpacing <= 0.1) return polygonCoords; 
 
-    // 7. Generate Scanlines
-    const gridPoints: any[] = [];
-    let currentY = bbox[1] + (laneSpacingDeg / 2); // Start with half spacing offset
+    // 6. Scanlines in Metric Space
+    const gridPointsMetric: {x: number, y: number}[] = [];
     
-    if (laneSpacingDeg <= 0.000001) return polygonCoords; // Prevent infinite loop on 0 spacing
+    // Helper to get intersection of line Y=c with segment P1-P2
+    const getIntersection = (y: number, p1: {x:number, y:number}, p2: {x:number, y:number}) => {
+        if ((p1.y > y && p2.y > y) || (p1.y < y && p2.y < y)) return null;
+        if (p1.y === p2.y) return null; // Parallel/Collinear ignore
+        const t = (y - p1.y) / (p2.y - p1.y);
+        const x = p1.x + t * (p2.x - p1.x);
+        return { x, y };
+    };
 
     let lineIndex = 0;
-    
-    // Safety break
-    const maxLines = 500;
-    
-    while (currentY < bbox[3] && lineIndex < maxLines) {
-        // Create a horizontal line across the bounding box
-        const lineString = turf.lineString([
-            [bbox[0] - 0.05, currentY], // Extend slightly beyond bbox to ensure intersection
-            [bbox[2] + 0.05, currentY]
-        ]);
+    // Start slightly inside or centered to ensure coverage
+    // A robust way is to start from minY + margin
+    let currentY = minY + (laneSpacing / 2);
 
-        // Find intersection with polygon
-        const intersects = turf.lineIntersect(lineString, rotatedPoly);
-        
-        if (intersects.features.length >= 2) {
-             const points = intersects.features.map(f => f.geometry.coordinates);
-             // Sort by X (Longitude)
-             points.sort((a, b) => a[0] - b[0]);
-
-             // Pair intersections (Entry/Exit)
-             for(let i=0; i<points.length - 1; i+=2) {
-                 const pStart = points[i];
-                 const pEnd = points[i+1];
-                 
-                 // Generate intermediate points along the line for photos
-                 const lineDistMeters = turf.distance(turf.point(pStart), turf.point(pEnd), {units: 'meters'});
-                 
-                 const segmentPoints = [];
-                 segmentPoints.push(pStart);
-                 
-                 // Densification logic: Add points if spacing allows
-                 if (photoSpacingMeters > 0 && lineDistMeters > photoSpacingMeters) {
-                     const numPhotos = Math.floor(lineDistMeters / photoSpacingMeters);
-                     for (let k = 1; k <= numPhotos; k++) {
-                         const ratio = k * photoSpacingMeters / lineDistMeters;
-                         const lng = pStart[0] + (pEnd[0] - pStart[0]) * ratio;
-                         segmentPoints.push([lng, currentY]);
-                     }
-                 }
-
-                 segmentPoints.push(pEnd);
-
-                 // Snake pattern: Reverse odd lines
-                 if (lineIndex % 2 !== 0) {
-                     segmentPoints.reverse();
-                 }
-                 
-                 gridPoints.push(...segmentPoints);
-             }
+    while (currentY < maxY) {
+        // Find intersections with polygon edges
+        const intersections = [];
+        for (let i = 0; i < rotatedCoords.length; i++) {
+            const p1 = rotatedCoords[i];
+            const p2 = rotatedCoords[(i + 1) % rotatedCoords.length];
+            const inter = getIntersection(currentY, p1, p2);
+            if (inter) intersections.push(inter);
         }
-        
-        currentY += laneSpacingDeg;
+
+        // Sort by X
+        intersections.sort((a, b) => a.x - b.x);
+
+        // Pair them
+        for (let i = 0; i < intersections.length - 1; i += 2) {
+            const pStart = intersections[i];
+            const pEnd = intersections[i+1];
+
+            // Generate Waypoints along this line segment
+            const lineLen = pEnd.x - pStart.x;
+            const segmentPoints = [];
+            segmentPoints.push(pStart);
+
+            // Densification
+            if (photoSpacing > 0 && lineLen > photoSpacing) {
+                const numPhotos = Math.floor(lineLen / photoSpacing);
+                for (let k = 1; k <= numPhotos; k++) {
+                     const ratio = k * photoSpacing / lineLen;
+                     const x = pStart.x + (pEnd.x - pStart.x) * ratio;
+                     segmentPoints.push({ x, y: currentY });
+                }
+            }
+            
+            segmentPoints.push(pEnd);
+
+            // Snake Pattern
+            if (lineIndex % 2 !== 0) {
+                segmentPoints.reverse();
+            }
+
+            gridPointsMetric.push(...segmentPoints);
+        }
+
+        currentY += laneSpacing;
         lineIndex++;
     }
-    
-    if (gridPoints.length === 0) return polygonCoords.map(p => ({lat: p.lat, lng: p.lng}));
 
-    // 8. Rotate Grid back by +Angle
-    const finalPoints = turf.points(gridPoints);
-    const rotatedGrid = turf.transformRotate(finalPoints, rotationAngle, { pivot: centroid });
+    if (gridPointsMetric.length === 0) return polygonCoords.map(p => ({lat: p.lat, lng: p.lng}));
 
-    return rotatedGrid.features.map(f => ({
-        lat: f.geometry.coordinates[1],
-        lng: f.geometry.coordinates[0]
-    }));
+    // 7. Un-Rotate and Un-Project
+    // Rotate back by +Angle
+    const revRad = toRad(rotationAngle);
+    const revCos = Math.cos(revRad);
+    const revSin = Math.sin(revRad);
+
+    return gridPointsMetric.map(p => {
+        // Rotate back
+        const xRot = p.x * revCos - p.y * revSin;
+        const yRot = p.x * revSin + p.y * revCos;
+        // Project back to Global Lat/Lon
+        return projectFromLocalCartesian(xRot, yRot, centerLat, centerLng);
+    });
 };
 
 /**
@@ -273,9 +327,9 @@ export const estimateRouteStats = (routes: Route[], settings: FlightSettings, fi
             // Simple assumption: Action param 1 is seconds for STAY
             if (w1.actionType1 === 0) totalTime += (w1.actionParam1); 
             
-            // Photo Count
+            // Photo Count (Action 1)
             if (w1.actionType1 === 1) photoCount++;
-            // Video Count
+            // Video Count (Action 2)
             if (w1.actionType1 === 2) videoCount++;
         }
         
@@ -289,8 +343,7 @@ export const estimateRouteStats = (routes: Route[], settings: FlightSettings, fi
             totalDist += returnDist;
         }
 
-        // 4. Mapping Interval Photos Estimation
-        // If route has interval set and is mapping mode (or just has interval)
+        // 4. Mapping Interval Photos Estimation (Litchi Interval)
         const interval = route.waypoints[0].photoTimeInterval;
         if (interval > 0) {
             // Estimate based on time

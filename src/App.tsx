@@ -4,17 +4,18 @@ import { Sidebar } from './components/Sidebar';
 import { MapEditor } from './components/Map';
 import { RouteManager } from './components/RouteManager';
 import { Calculator } from './components/Calculator';
+import { Instructions } from './components/Instructions';
 import { Route, FlightSettings, DEFAULT_SETTINGS, Waypoint, HomePoint, RouteStats, SpeedUnit } from './types';
 import { parseCSV, parseKML, exportLitchiZip, exportDJIKMLZip, exportDJIWPML, generateId } from './services/fileService';
 import { updateWaypointsWithBearings, estimateRouteStats, generateGridWaypoints } from './services/geometryService';
-import { X, HelpCircle, Map as MapIcon, Table, Calculator as CalcIcon, Camera, CheckCircle, AlertCircle } from 'lucide-react';
+import { X, HelpCircle, Map as MapIcon, Table, Calculator as CalcIcon, Camera, CheckCircle, AlertCircle, BookOpen } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { t, Language } from './translations';
 import * as turf from '@turf/turf';
 
 const PROJECT_PREFIX = 'litchi_project_';
 
-type ActiveTab = 'map' | 'manager' | 'calculator';
+type ActiveTab = 'map' | 'manager' | 'calculator' | 'instructions';
 
 // Toast Notification Interface
 interface Notification {
@@ -192,48 +193,62 @@ const App: React.FC = () => {
   }, [settings]);
 
 
-  // --- Logic 3: Import Files ---
+  // --- Logic 3: Optimized Multi-file Import ---
   const handleImport = async (files: FileList) => {
     setIsLoading(true);
-    const newRoutes: Route[] = [];
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    
+    // Create an array of promises for parallel processing
+    const fileArray = Array.from(files);
+    
+    const importPromises = fileArray.map(async (file) => {
       const ext = file.name.split('.').pop()?.toLowerCase();
-
       try {
         if (ext === 'csv') {
           const wps = await parseCSV(file);
           if (wps.length > 0) {
-            newRoutes.push({
+             return [{
               id: generateId(),
               name: file.name.replace('.csv', ''),
               waypoints: wps,
               color: '#' + Math.floor(Math.random()*16777215).toString(16),
               locked: false,
               homePoint: { lat: wps[0].latitude - 0.0001, lng: wps[0].longitude }
-            });
+            } as Route];
           }
         } else if (ext === 'kml') {
           const kmlRoutes = await parseKML(file);
           // ensure home point is set
-          newRoutes.push(...kmlRoutes.map(r => ({
+          return kmlRoutes.map(r => ({
               ...r, 
               locked: false,
               homePoint: { lat: r.waypoints[0].latitude - 0.0001, lng: r.waypoints[0].longitude }
-          })));
+          } as Route));
         }
       } catch (err) {
         console.error(`Error parsing ${file.name}`, err);
-        showToast(`Failed to parse ${file.name}`, 'error');
+        return null;
       }
-    }
+      return null;
+    });
 
-    setRoutes(prev => [...prev, ...newRoutes]);
-    
-    setIsLoading(false);
-    if (newRoutes.length > 0) {
-        showToast(`Successfully imported ${newRoutes.length} routes.`, 'success');
+    try {
+        const results = await Promise.all(importPromises);
+        
+        // Flatten array and filter out nulls
+        const validNewRoutes = results.flat().filter((r): r is Route => r !== null);
+
+        if (validNewRoutes.length > 0) {
+             setRoutes(prev => [...prev, ...validNewRoutes]);
+             showToast(`Successfully imported ${validNewRoutes.length} routes from ${files.length} files.`, 'success');
+        } else {
+             showToast('No valid routes found in files.', 'error');
+        }
+
+    } catch (e) {
+        console.error("Batch import failed", e);
+        showToast('Error during batch import.', 'error');
+    } finally {
+        setIsLoading(false);
     }
   };
 
@@ -496,6 +511,12 @@ const App: React.FC = () => {
                 >
                     <CalcIcon size={16} /> {t("tab_calc", language)}
                 </button>
+                <button 
+                    onClick={() => setActiveTab('instructions')}
+                    className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'instructions' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                >
+                    <BookOpen size={16} /> {t("tab_instr", language)}
+                </button>
             </div>
             
             {activeTab === 'map' && (
@@ -528,6 +549,7 @@ const App: React.FC = () => {
                         speedUnit={speedUnit}
                         language={language}
                     />
+                    {/* Quick Guide Overlay - Only show if user hasn't closed it */}
                     {showInstructions && (
                         <div className="absolute top-4 right-4 z-[1000] bg-white/95 p-3 rounded shadow-md text-xs max-w-xs border border-slate-200 backdrop-blur-sm">
                             <div className="flex justify-between items-center mb-2 pb-1 border-b border-slate-100">
@@ -540,6 +562,9 @@ const App: React.FC = () => {
                                 <li>{t("guide_edit", language)}</li>
                                 <li>{t("guide_lock", language)}</li>
                             </ul>
+                            <div className="mt-2 text-center text-[10px] text-blue-500 cursor-pointer hover:underline" onClick={() => setActiveTab('instructions')}>
+                                View Full Guide &rarr;
+                            </div>
                         </div>
                     )}
                     {!showInstructions && (
@@ -565,6 +590,10 @@ const App: React.FC = () => {
 
             {activeTab === 'calculator' && (
                 <Calculator language={language} />
+            )}
+
+            {activeTab === 'instructions' && (
+                <Instructions language={language} />
             )}
         </div>
 

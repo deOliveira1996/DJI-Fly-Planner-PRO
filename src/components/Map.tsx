@@ -8,6 +8,7 @@ import { Route, FlightSettings, SpeedUnit } from '../types';
 import { calculateDistance, calculateBearing, generateGridWaypoints, computeDestinationPoint } from '../services/geometryService';
 import { Language, t } from '../translations';
 import * as turf from '@turf/turf';
+import { point as createPoint, points as createPoints } from '@turf/helpers';
 
 // Custom Green Home Icon
 const HomeIcon = L.icon({
@@ -185,7 +186,7 @@ const GridRotationHandle: React.FC<{ route: Route, onRotate: (id: string, angle:
     if (polyData.length < 3) return null;
 
     // Calculate centroid
-    const points = turf.points(polyData.map(wp => [
+    const points = createPoints(polyData.map(wp => [
         (wp as any).longitude || (wp as any).lng, 
         (wp as any).latitude || (wp as any).lat
     ]));
@@ -195,16 +196,13 @@ const GridRotationHandle: React.FC<{ route: Route, onRotate: (id: string, angle:
 
     // Calculate Lever Arm Radius (bbox diagonal / 2)
     const bbox = turf.bbox(points);
-    const d1 = turf.point([bbox[0], bbox[1]]);
-    const d2 = turf.point([bbox[2], bbox[3]]);
+    const d1 = createPoint([bbox[0], bbox[1]]);
+    const d2 = createPoint([bbox[2], bbox[3]]);
     const distKm = turf.distance(d1, d2);
     // Set lever length to 60% of bounding box diagonal or min 50 meters
     const leverDistMeters = Math.max(50, (distKm * 1000) * 0.6);
 
     // Calculate current Handle Position based on rotation
-    // We want the handle to rotate visually with the grid
-    // Standard 0 deg = North (Up) in typical UI, but Turf 0 deg = East (Right).
-    // Let's align 0 deg with North for UI intuition.
     const currentAngle = route.gridRotation || 0;
     const handlePosObj = computeDestinationPoint(centerLatLng.lat, centerLatLng.lng, leverDistMeters, currentAngle);
     const handleLatLng = L.latLng(handlePosObj.lat, handlePosObj.lng);
@@ -222,8 +220,6 @@ const GridRotationHandle: React.FC<{ route: Route, onRotate: (id: string, angle:
              let deg = radians * (180 / Math.PI);
              
              // Align: We want 0 to be Up (North).
-             // atan2: Right=0, Down=90, Left=180, Up=-90
-             // To make Up=0: +90
              deg = (deg + 90) % 360;
              if (deg < 0) deg += 360;
              
@@ -257,7 +253,7 @@ const GridRotationHandle: React.FC<{ route: Route, onRotate: (id: string, angle:
                  position={handleLatLng} 
                  icon={L.divIcon({
                      className: 'angle-label',
-                     html: `<div style="background:white; padding:2px 4px; border-radius:4px; font-weight:bold; font-size:10px; border:1px solid #ccc; white-space:nowrap; transform: translate(15px, -15px);">${currentAngle.toFixed(0)}°</div>`,
+                     html: `<div style="font-weight:900; font-size:16px; color:#ffffff; text-shadow: 2px 2px 0 #8b5cf6, -1px -1px 0 #8b5cf6, 1px -1px 0 #8b5cf6, -1px 1px 0 #8b5cf6; white-space:nowrap; transform: translate(24px, -24px); font-family: sans-serif;">${currentAngle.toFixed(0)}°</div>`,
                      iconSize: [0,0]
                  })}
              />

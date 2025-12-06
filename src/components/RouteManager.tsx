@@ -15,6 +15,50 @@ interface RouteManagerProps {
     language: Language;
 }
 
+// Memoized Input Component to prevent re-rendering entire table on typing
+const TableInput = React.memo<{
+    value: number,
+    onChange: (val: number) => void
+}>(({ value, onChange }) => {
+    const [localVal, setLocalVal] = useState(String(value));
+
+    // When external value changes (e.g. from Batch Edit), update local
+    React.useEffect(() => {
+        // Only update if not currently editing (to avoid cursor jumps)
+        // But strict equality check helps
+        if (Number(localVal) !== value && localVal !== '' && localVal !== '-' && localVal !== '.') {
+            setLocalVal(String(value));
+        }
+    }, [value]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const raw = e.target.value;
+        setLocalVal(raw);
+        if (raw !== '' && raw !== '-' && raw !== '.' && !isNaN(Number(raw))) {
+            onChange(Number(raw));
+        }
+    };
+    
+    const handleBlur = () => {
+         // On blur, format nicelly
+         if (localVal !== '' && localVal !== '-') {
+             const num = Number(localVal);
+             if (!isNaN(num)) {
+                 setLocalVal(num.toFixed(1).replace(/\.0$/, '')); // Format to max 1 decimal
+                 onChange(num);
+             }
+         }
+    };
+
+    return <input 
+        type="text" 
+        className="bg-white text-gray-900 border border-slate-300 rounded p-1 w-full focus:ring-1 focus:ring-blue-500 outline-none" 
+        value={localVal} 
+        onChange={handleChange} 
+        onBlur={handleBlur}
+    />;
+});
+
 export const RouteManager: React.FC<RouteManagerProps> = ({ 
     routes, 
     onUpdateWaypoint, 
@@ -30,51 +74,6 @@ export const RouteManager: React.FC<RouteManagerProps> = ({
     
     // Shared input style - High Contrast - Bright White
     const inputClass = "bg-white text-gray-900 border border-slate-300 rounded p-1 w-full focus:ring-1 focus:ring-blue-500 outline-none";
-
-    // Helper for Raw Input in Table
-    const TableInput: React.FC<{
-        value: number,
-        onChange: (val: number) => void
-    }> = ({ value, onChange }) => {
-        const [localVal, setLocalVal] = useState(String(value));
-
-        // When external value changes (e.g. from Batch Edit), update local
-        React.useEffect(() => {
-            // Only update if not currently editing (to avoid cursor jumps)
-            // But strict equality check helps
-            if (Number(localVal) !== value && localVal !== '' && localVal !== '-' && localVal !== '.') {
-                setLocalVal(String(value));
-            }
-        }, [value]);
-
-        const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-            const raw = e.target.value;
-            setLocalVal(raw);
-            if (raw !== '' && raw !== '-' && raw !== '.' && !isNaN(Number(raw))) {
-                onChange(Number(raw));
-            }
-        };
-        
-        const handleBlur = () => {
-             // On blur, format nicelly
-             if (localVal !== '' && localVal !== '-') {
-                 const num = Number(localVal);
-                 if (!isNaN(num)) {
-                     setLocalVal(num.toFixed(1).replace(/\.0$/, '')); // Format to max 1 decimal
-                     onChange(num);
-                 }
-             }
-        };
-
-        return <input 
-            type="text" 
-            className={inputClass} 
-            value={localVal} 
-            onChange={handleChange} 
-            onBlur={handleBlur}
-        />;
-    };
-
 
     const toDisplaySpeed = (ms: number) => {
         if (speedUnit === 'kmh') return parseFloat((ms * 3.6).toFixed(2));

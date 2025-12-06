@@ -105,11 +105,13 @@ export const t = (key: string, lang: Language): string => {
     "advanced": { en: "Advanced (Litchi)", pt: "Avançado (Litchi)" },
     "close": { en: "Close", pt: "Fechar" },
 
-    // Calculator
-    "calc_title": { en: "Sweep Area Calculator", pt: "Calculadora de Área de Varredura" },
-    "drone_params": { en: "1. Drone Parameters", pt: "1. Parâmetros do Drone" },
-    "calc_mode": { en: "2. Calculation Mode", pt: "2. Modo de Cálculo" },
-    "optional_dist": { en: "3. Optional Distances", pt: "3. Distâncias Opcionais" },
+    // Calculator & Photogrammetry
+    "calc_title": { en: "Mapping & Photogrammetry Calculator", pt: "Calculadora de Mapeamento e Fotogrametria" },
+    "drone_params": { en: "1. Drone & Camera", pt: "1. Drone e Câmera" },
+    "calc_mode": { en: "2. Mode & Sweep", pt: "2. Modo e Varredura" },
+    "optional_dist": { en: "3. Distances", pt: "3. Distâncias" },
+    "photogrammetry_res": { en: "Photogrammetry Results", pt: "Resultados de Fotogrametria" },
+    
     "fov_h": { en: "FOV H (°)", pt: "FOV H (°)" },
     "fov_v": { en: "FOV V (°)", pt: "FOV V (°)" },
     "load_preset": { en: "LOAD PRESET:", pt: "CARREGAR PRESET:" },
@@ -128,10 +130,22 @@ export const t = (key: string, lang: Language): string => {
     "total_time": { en: "Total Flight Time", pt: "Tempo Total de Voo" },
     "save_image": { en: "Save Image", pt: "Salvar Imagem" },
 
+    // New GSD/Blur Terms
+    "shutter_speed": { en: "Shutter Speed", pt: "Velocidade do Obturador" },
+    "motion_blur": { en: "Motion Blur", pt: "Desfoque de Movimento" },
+    "gsd": { en: "GSD (Resolution)", pt: "GSD (Resolução)" },
+    "footprint": { en: "Footprint (WxH)", pt: "Cobertura de Foto (LxA)" },
+    "photo_interval_dist": { en: "Shot Interval (Dist)", pt: "Intervalo Disparo (Dist)" },
+    "photo_interval_time": { en: "Shot Interval (Time)", pt: "Intervalo Disparo (Tempo)" },
+    "lane_spacing": { en: "Lane Spacing", pt: "Espaçamento entre Linhas" },
+    "sensor_dim": { en: "Sensor Size", pt: "Tam. do Sensor" },
+    "focal_len": { en: "Real Focal Len.", pt: "Dist. Focal Real" },
+
     // Tabs
     "tab_map": { en: "Map Planner", pt: "Mapa Planejador" },
     "tab_manager": { en: "Route Manager", pt: "Gerenciador Rotas" },
     "tab_calc": { en: "Calculator", pt: "Calculadora" },
+    "tab_instr": { en: "Instructions", pt: "Instruções" },
     "screenshot": { en: "Screenshot", pt: "Captura de Tela" },
 
     // Instructions
@@ -139,7 +153,32 @@ export const t = (key: string, lang: Language): string => {
     "guide_draw": { en: "Draw: Use polygon/line tool.", pt: "Desenhar: Use ferramenta polígono/linha." },
     "guide_takeoff": { en: "Takeoff: Drag Green 'H' per route.", pt: "Decolagem: Arraste o 'H' Verde por rota." },
     "guide_edit": { en: "Edit: Drag arrows.", pt: "Editar: Arraste as setas." },
-    "guide_lock": { en: "Lock: Use padlock.", pt: "Travar: Use o cadeado." }
+    "guide_lock": { en: "Lock: Use padlock.", pt: "Travar: Use o cadeado." },
+    
+    // Instructions Tab Content
+    "instr_intro_title": { en: "Welcome to DJI Fly Planner PRO", pt: "Bem-vindo ao DJI Fly Planner PRO" },
+    "instr_intro_text": { en: "A comprehensive tool for planning drone missions for Litchi and DJI Fly (Mini 4 Pro, Air 3, Mavic 3).", pt: "Uma ferramenta completa para planejar missões de drone para Litchi e DJI Fly (Mini 4 Pro, Air 3, Mavic 3)." },
+    "instr_map_tools": { en: "Map Tools", pt: "Ferramentas de Mapa" },
+    "instr_map_poly": { en: "Use the Polygon tool to draw areas. In 'Mapping Mode', this automatically generates a grid.", pt: "Use a ferramenta Polígono para desenhar áreas. No 'Modo Mapeamento', isso gera automaticamente uma grade." },
+    "instr_map_line": { en: "Use the Polyline tool to draw standard waypoint routes.", pt: "Use a ferramenta Polilinha para desenhar rotas de waypoints padrão." },
+    "instr_map_edit": { en: "Drag any marker to move it. Drag the Green 'H' to set the Takeoff point.", pt: "Arraste qualquer marcador para movê-lo. Arraste o 'H' Verde para definir o ponto de Decolagem." },
+    "instr_map_rotate": { en: "In Mapping Mode, use the '🔄' handle to rotate the grid path.", pt: "No Modo Mapeamento, use a alça '🔄' para girar o caminho da grade." },
+    "instr_settings": { en: "Flight Settings", pt: "Configurações de Voo" },
+    "instr_settings_text": { en: "Settings in the sidebar apply to ALL unlocked routes when you click 'Apply Settings'.", pt: "As configurações na barra lateral se aplicam a TODAS as rotas desbloqueadas quando você clica em 'Aplicar Configurações'." },
+    "instr_calc_gsd": { en: "GSD & Photogrammetry", pt: "GSD e Fotogrametria" },
+    "instr_calc_text": { en: "Use the Calculator tab to plan camera parameters. Ensure Motion Blur is lower than GSD for sharp images.", pt: "Use a aba Calculadora para planejar parâmetros da câmera. Garanta que o Desfoque de Movimento seja menor que o GSD para imagens nítidas." },
+    "instr_export": { en: "Exporting", pt: "Exportando" },
+    "instr_export_litchi": { en: "Use Litchi CSV for Litchi Hub/App.", pt: "Use Litchi CSV para Litchi Hub/App." },
+    "instr_export_dji": { en: "Use DJI Fly (KMZ) for DJI Mini 4 Pro, Air 3, Mavic 3. Import via 'Waypoints' folder on controller.", pt: "Use DJI Fly (KMZ) para DJI Mini 4 Pro, Air 3, Mavic 3. Importe via pasta 'Waypoints' no controle." },
+    
+    // New Import Guide
+    "dji_import_guide": { en: "Native DJI Fly Import Guide", pt: "Guia de Importação Nativa DJI Fly" },
+    "dji_compat_drones": { en: "Compatible Drones: Mini 4 Pro, Air 3, Mavic 3 (Pro/Classic/Enterprise)", pt: "Drones Compatíveis: Mini 4 Pro, Air 3, Mavic 3 (Pro/Classic/Enterprise)" },
+    "dji_step_1": { en: "Export your route using the Orange 'DJI Fly (KMZ)' button.", pt: "Exporte sua rota usando o botão Laranja 'DJI Fly (KMZ)'." },
+    "dji_step_2": { en: "Connect your DJI RC 2 / RC Pro to your computer via USB-C.", pt: "Conecte seu DJI RC 2 / RC Pro ao computador via USB-C." },
+    "dji_step_3": { en: "Navigate to this specific folder path:", pt: "Navegue para esta pasta específica:" },
+    "dji_step_4": { en: "Copy the .kmz file into the 'waypoint' folder.", pt: "Copie o arquivo .kmz para a pasta 'waypoint'." },
+    "dji_step_5": { en: "Open DJI Fly, go to Waypoints, and tap the Folder icon to load.", pt: "Abra o DJI Fly, vá para Waypoints e toque no ícone de Pasta para carregar." }
   };
 
   return dict[key]?.[lang] || key;

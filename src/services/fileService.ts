@@ -86,109 +86,116 @@ export const parseCSV = (file: File): Promise<Waypoint[]> => {
 };
 
 export const parseKML = async (file: File): Promise<Route[]> => {
-  const text = await file.text();
-  const parser = new DOMParser();
-  const kml = parser.parseFromString(text, 'text/xml');
-  const routes: Route[] = [];
+  try {
+      const text = await file.text();
+      const parser = new DOMParser();
+      const kml = parser.parseFromString(text, 'text/xml');
+      const routes: Route[] = [];
 
-  const placemarks = kml.getElementsByTagName('Placemark');
-  const pointWaypoints: Waypoint[] = [];
+      const placemarks = kml.getElementsByTagName('Placemark');
+      const pointWaypoints: Waypoint[] = [];
 
-  for (let i = 0; i < placemarks.length; i++) {
-    const pm = placemarks[i];
-    const name = pm.getElementsByTagName('name')[0]?.textContent || `Route ${i}`;
-    
-    // Check for Point
-    const point = pm.getElementsByTagName('Point')[0];
-    if (point) {
-      const coords = point.getElementsByTagName('coordinates')[0]?.textContent?.trim();
-      if (coords) {
-        const [lon, lat] = coords.split(',').map(Number);
-        pointWaypoints.push({
-          id: pointWaypoints.length + 1,
-          latitude: lat,
-          longitude: lon,
-          altitude: 30,
-          heading: 0,
-          curveSize: 0,
-          rotationDir: 0,
-          gimbalMode: 0,
-          gimbalPitch: 0,
-          actionType1: -1,
-          actionParam1: 0,
-          actionType2: -1,
-          actionParam2: 0,
-          altitudeMode: 1,
-          speed: 0,
-          poiLat: 0,
-          poiLon: 0,
-          poiAlt: 0,
-          poiAltMode: 0,
-          photoTimeInterval: -1,
-          photoDistInterval: -1
-        });
-      }
-    }
+      for (let i = 0; i < placemarks.length; i++) {
+        const pm = placemarks[i];
+        const name = pm.getElementsByTagName('name')[0]?.textContent || `Route ${i}`;
+        
+        // Check for Point
+        const point = pm.getElementsByTagName('Point')[0];
+        if (point) {
+          const coords = point.getElementsByTagName('coordinates')[0]?.textContent?.trim();
+          if (coords) {
+            const [lon, lat] = coords.split(',').map(Number);
+            if(!isNaN(lon) && !isNaN(lat)) {
+                pointWaypoints.push({
+                  id: pointWaypoints.length + 1,
+                  latitude: lat,
+                  longitude: lon,
+                  altitude: 30,
+                  heading: 0,
+                  curveSize: 0,
+                  rotationDir: 0,
+                  gimbalMode: 0,
+                  gimbalPitch: 0,
+                  actionType1: -1,
+                  actionParam1: 0,
+                  actionType2: -1,
+                  actionParam2: 0,
+                  altitudeMode: 1,
+                  speed: 0,
+                  poiLat: 0,
+                  poiLon: 0,
+                  poiAlt: 0,
+                  poiAltMode: 0,
+                  photoTimeInterval: -1,
+                  photoDistInterval: -1
+                });
+            }
+          }
+        }
 
-    // Check for LineString
-    const lineString = pm.getElementsByTagName('LineString')[0];
-    if (lineString) {
-      const coordStr = lineString.getElementsByTagName('coordinates')[0]?.textContent?.trim();
-      if (coordStr) {
-        const parts = coordStr.split(/\s+/);
-        const lineWps: Waypoint[] = parts.map((part, idx) => {
-          const [lon, lat] = part.split(',').map(Number);
-          return {
-             id: idx + 1,
-             latitude: lat,
-             longitude: lon,
-             altitude: 30,
-             heading: 0,
-             curveSize: 0,
-             rotationDir: 0,
-             gimbalMode: 0,
-             gimbalPitch: 0,
-             actionType1: -1,
-             actionParam1: 0,
-             actionType2: -1,
-             actionParam2: 0,
-             altitudeMode: 1,
-             speed: 0,
-             poiLat: 0,
-             poiLon: 0,
-             poiAlt: 0,
-             poiAltMode: 0,
-             photoTimeInterval: -1,
-             photoDistInterval: -1
-          };
-        }).filter(w => !isNaN(w.latitude));
+        // Check for LineString
+        const lineString = pm.getElementsByTagName('LineString')[0];
+        if (lineString) {
+          const coordStr = lineString.getElementsByTagName('coordinates')[0]?.textContent?.trim();
+          if (coordStr) {
+            const parts = coordStr.split(/\s+/);
+            const lineWps: Waypoint[] = parts.map((part, idx) => {
+              const [lon, lat] = part.split(',').map(Number);
+              return {
+                 id: idx + 1,
+                 latitude: lat,
+                 longitude: lon,
+                 altitude: 30,
+                 heading: 0,
+                 curveSize: 0,
+                 rotationDir: 0,
+                 gimbalMode: 0,
+                 gimbalPitch: 0,
+                 actionType1: -1,
+                 actionParam1: 0,
+                 actionType2: -1,
+                 actionParam2: 0,
+                 altitudeMode: 1,
+                 speed: 0,
+                 poiLat: 0,
+                 poiLon: 0,
+                 poiAlt: 0,
+                 poiAltMode: 0,
+                 photoTimeInterval: -1,
+                 photoDistInterval: -1
+              };
+            }).filter(w => !isNaN(w.latitude) && !isNaN(w.longitude));
 
-        if(lineWps.length > 0) {
-            routes.push({
-                id: generateId(),
-                name: name,
-                waypoints: lineWps,
-                color: '#3388ff',
-                locked: false,
-                homePoint: { lat: lineWps[0].latitude, lng: lineWps[0].longitude }
-            });
+            if(lineWps.length > 0) {
+                routes.push({
+                    id: generateId(),
+                    name: name,
+                    waypoints: lineWps,
+                    color: '#3388ff',
+                    locked: false,
+                    homePoint: { lat: lineWps[0].latitude, lng: lineWps[0].longitude }
+                });
+            }
+          }
         }
       }
-    }
-  }
 
-  if (pointWaypoints.length > 0) {
-    routes.push({
-      id: generateId(),
-      name: file.name.replace('.kml', ''),
-      waypoints: pointWaypoints,
-      color: '#ff3388',
-      locked: false,
-      homePoint: { lat: pointWaypoints[0].latitude, lng: pointWaypoints[0].longitude }
-    });
-  }
+      if (pointWaypoints.length > 0) {
+        routes.push({
+          id: generateId(),
+          name: file.name.replace('.kml', ''),
+          waypoints: pointWaypoints,
+          color: '#ff3388',
+          locked: false,
+          homePoint: { lat: pointWaypoints[0].latitude, lng: pointWaypoints[0].longitude }
+        });
+      }
 
-  return routes;
+      return routes;
+  } catch (e) {
+      console.error("KML Parse Error", e);
+      return [];
+  }
 };
 
 export const exportLitchiZip = (routes: Route[]) => {
