@@ -4,7 +4,7 @@ import { Sidebar } from './components/Sidebar';
 import { MapEditor } from './components/Map';
 import { RouteManager } from './components/RouteManager';
 import { Calculator } from './components/Calculator';
-import { Route, FlightSettings, DEFAULT_SETTINGS, Waypoint, HomePoint, RouteStats } from './types';
+import { Route, FlightSettings, DEFAULT_SETTINGS, Waypoint, HomePoint, RouteStats, SpeedUnit } from './types';
 import { parseCSV, parseKML, exportLitchiZip, exportDJIKMLZip, exportDJIWPML, generateId } from './services/fileService';
 import { updateWaypointsWithBearings, estimateRouteStats, generateGridWaypoints } from './services/geometryService';
 import { X, HelpCircle, Map as MapIcon, Table, Calculator as CalcIcon, Camera, CheckCircle, AlertCircle } from 'lucide-react';
@@ -15,7 +15,6 @@ import * as turf from '@turf/turf';
 const PROJECT_PREFIX = 'litchi_project_';
 
 type ActiveTab = 'map' | 'manager' | 'calculator';
-export type SpeedUnit = 'kmh' | 'ms';
 
 // Toast Notification Interface
 interface Notification {
@@ -73,7 +72,6 @@ const App: React.FC = () => {
 
   const saveProject = (name: string) => {
     try {
-      // NOTE: HomePoint is now inside routes, so we just save routes & settings
       const data = JSON.stringify({ routes, settings });
       localStorage.setItem(`${PROJECT_PREFIX}${name}`, data);
       
@@ -135,16 +133,38 @@ const App: React.FC = () => {
 
         updatedCount++;
 
+        // Regenerate grid if it's a mapping route
+        let currentWaypoints = route.waypoints;
+
+        // CRITICAL FIX: Use originalPolygon to regenerate grid so shape doesn't collapse
+        if (settings.flightMode === 'mapping' && route.gridRotation !== undefined && route.originalPolygon) {
+             const newGridCoords = generateGridWaypoints(route.originalPolygon, settings, route.gridRotation);
+             
+             // Rebuild waypoints
+             currentWaypoints = newGridCoords.map((c, idx) => ({
+                ...route.waypoints[0], // Inherit base properties
+                id: idx + 1,
+                latitude: c.lat,
+                longitude: c.lng,
+                actionType1: 1, // Force Photo
+                gimbalPitch: -90, // Force Nadir
+                heading: 0,
+                altitude: settings.altitude // Enforce altitude
+             }));
+        }
+
         // 1. Basic settings application
-        let updatedWaypoints = route.waypoints.map(wp => ({
+        let updatedWaypoints = currentWaypoints.map(wp => ({
           ...wp,
           altitude: settings.altitude,
           speed: parseFloat((settings.speedKmh / 3.6).toFixed(2)),
           curveSize: settings.curveSize,
           gimbalMode: settings.gimbalMode,
-          gimbalPitch: settings.gimbalPitch,
+          // Only overwrite gimbal/action if not mapping mode, or explicit overwrite desired
+          // For mapping, we usually want -90 and Photo
+          gimbalPitch: settings.flightMode === 'mapping' ? -90 : settings.gimbalPitch,
           altitudeMode: settings.altitudeMode,
-          actionType1: settings.action1,
+          actionType1: settings.flightMode === 'mapping' ? 1 : settings.action1,
         }));
 
         // 2. Heading Logic
@@ -221,6 +241,8 @@ const App: React.FC = () => {
   const handleRouteCreated = (coords: { lat: number, lng: number }[]) => {
     // If in Mapping Mode, default action is Take Photo (1)
     const defaultAction = settings.flightMode === 'mapping' ? 1 : settings.action1;
+    // If in Mapping Mode, default Gimbal Pitch is -90
+    const defaultGimbal = settings.flightMode === 'mapping' ? -90 : settings.gimbalPitch;
 
     const newWaypoints: Waypoint[] = coords.map((c, idx) => ({
       id: idx + 1,
@@ -231,7 +253,7 @@ const App: React.FC = () => {
       curveSize: settings.curveSize,
       rotationDir: 0,
       gimbalMode: settings.gimbalMode,
-      gimbalPitch: settings.gimbalPitch,
+      gimbalPitch: defaultGimbal,
       actionType1: defaultAction,
       actionParam1: 0,
       actionType2: -1,
@@ -260,7 +282,9 @@ const App: React.FC = () => {
       color: '#ff5722',
       locked: false,
       homePoint: { lat: finalWps[0].latitude - 0.0001, lng: finalWps[0].longitude },
-      gridRotation: settings.flightMode === 'mapping' ? 0 : undefined
+      gridRotation: settings.flightMode === 'mapping' ? 0 : undefined,
+      // Persist original polygon if it's a mapping grid
+      originalPolygon: settings.flightMode === 'mapping' ? coords : undefined
     };
 
     setRoutes(prev => [...prev, newRoute]);
@@ -325,38 +349,21 @@ const App: React.FC = () => {
       setRoutes(prev => prev.map(route => {
           if (route.id !== routeId || route.locked) return route;
           
-          // Re-calculate grid based on original polygon hull
-          // Note: In a real app we might want to store the original hull separately.
-          // Here, we can assume the current points roughly define the area, OR
-          // we should store the 'bounds' or 'polygon' separately.
-          // Simplification: We only support rotating a fresh grid. 
-          // Re-generating from current waypoints is tricky because they are zig-zag.
-          // Ideally we store the original polygon points in Route.
-          // For now, let's assume we re-calculate based on convex hull of current points?
-          // Better: We stored the gridRotation. If we want to change it, we need the original polygon.
-          // LIMITATION: Without storing original polygon, we can't cleanly re-generate.
-          // FIX: In `handleRouteCreated` we generate points. If we want dynamic updates, 
-          // we need to keep the polygon.
-          // Hack: We will just update the property here. To enable real-time re-generation, 
-          // we would need to restructure `Route` to hold `originalPolygonCoords`.
+          // Use ORIGINAL POLYGON for rotation to avoid shape collapse
+          const basePolygon = route.originalPolygon;
           
-          // As a fallback for this specific request context where we can't refactor everything:
-          // We will update the state. The user has to drag the handle which triggers this.
-          // But to make it WORK, `MapEditor` would need to re-call `generateGridWaypoints` using the Convex Hull of current points.
-          
-          const points = route.waypoints.map(wp => ({lat: wp.latitude, lng: wp.longitude}));
-          const convexHull = turf.convex(turf.points(points.map(p => [p.lng, p.lat])));
-          
-          if (!convexHull) return { ...route, gridRotation: angle };
+          if (!basePolygon) return { ...route, gridRotation: angle };
 
-          const polyCoords = convexHull.geometry.coordinates[0].map(p => ({lat: p[1], lng: p[0]}));
-          const newGridCoords = generateGridWaypoints(polyCoords, settings, angle);
+          const newGridCoords = generateGridWaypoints(basePolygon, settings, angle);
           
           const newWps: Waypoint[] = newGridCoords.map((c, idx) => ({
              ...route.waypoints[0], // Copy props from first
              id: idx + 1,
              latitude: c.lat,
-             longitude: c.lng
+             longitude: c.lng,
+             actionType1: 1, // Force Photo for grid points
+             gimbalPitch: -90,
+             altitude: settings.altitude
           }));
 
           return { ...route, waypoints: newWps, gridRotation: angle };

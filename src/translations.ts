@@ -1,5 +1,4 @@
 
-
 export type Language = 'en' | 'pt';
 
 export const t = (key: string, lang: Language): string => {

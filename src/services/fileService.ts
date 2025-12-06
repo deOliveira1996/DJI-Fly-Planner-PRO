@@ -1,3 +1,4 @@
+
 import Papa from 'papaparse';
 import JSZip from 'jszip';
 import FileSaver from 'file-saver';
@@ -418,10 +419,11 @@ const generateWaylinesWpml = (routeName: string, waypoints: Waypoint[]) => {
 </kml>`;
 };
 
-export const exportDJIWPML = (routes: Route[]) => {
+export const exportDJIWPML = async (routes: Route[]) => {
     const masterZip = new JSZip();
-
-    routes.forEach((route, i) => {
+    
+    // Process all routes in parallel promises
+    const promises = routes.map(async (route, i) => {
         const kmzZip = new JSZip();
         const wpmzFolder = kmzZip.folder("wpmz");
         
@@ -432,14 +434,13 @@ export const exportDJIWPML = (routes: Route[]) => {
             wpmzFolder.file("template.kml", template);
             wpmzFolder.file("waylines.wpml", waylines);
         }
-
-        kmzZip.generateAsync({type:"blob"}).then(blob => {
-             masterZip.file(`${route.name}_DJI_Fly.kmz`, blob);
-             if (i === routes.length - 1) {
-                 masterZip.generateAsync({type:"blob"}).then(content => {
-                     saveAs(content, "DJI_WPML_Missions.zip");
-                 })
-             }
-        });
+        
+        const blob = await kmzZip.generateAsync({type:"blob"});
+        masterZip.file(`${route.name}_DJI_Fly.kmz`, blob);
     });
+
+    await Promise.all(promises);
+
+    const content = await masterZip.generateAsync({type:"blob"});
+    saveAs(content, "DJI_WPML_Missions.zip");
 };

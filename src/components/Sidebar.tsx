@@ -1,9 +1,7 @@
 
-
 import React, { useRef, useState, useEffect } from 'react';
-import { FlightSettings, Route, RouteStats, DRONE_PRESETS } from '../types';
+import { FlightSettings, Route, RouteStats, DRONE_PRESETS, SpeedUnit } from '../types';
 import { Upload, Download, Settings, Trash2, Undo2, XCircle, Plane, FolderOpen, Save, Trash, Lock, Unlock, Clock, Ruler, Edit2, Camera, Video, Image } from 'lucide-react';
-import { SpeedUnit } from '../App';
 import { t, Language } from '../translations';
 import { calculatePhotoInterval } from '../services/geometryService';
 import icon from '../../assets/icon.png';

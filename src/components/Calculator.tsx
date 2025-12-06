@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { CalculatorResult, DronePreset, DRONE_PRESETS } from '../types';
 import html2canvas from 'html2canvas';

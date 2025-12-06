@@ -1,4 +1,6 @@
 
+export type SpeedUnit = 'kmh' | 'ms';
+
 export interface Waypoint {
   id: number;
   latitude: number;
@@ -36,6 +38,7 @@ export interface Route {
   locked: boolean;
   homePoint: HomePoint;
   gridRotation?: number; // Store rotation angle for mapping grids
+  originalPolygon?: { lat: number; lng: number }[]; // Persist original shape for re-gridding
 }
 
 export interface FlightSettings {

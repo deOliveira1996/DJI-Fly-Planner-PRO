@@ -1,12 +1,11 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { MapContainer, TileLayer, FeatureGroup, Polyline, Marker, Popup, useMapEvents, LayersControl } from 'react-leaflet';
+import { MapContainer, TileLayer, FeatureGroup, Polyline, Marker, Popup, useMapEvents, LayersControl, useMap } from 'react-leaflet';
 import { EditControl } from 'react-leaflet-draw';
 import L from 'leaflet';
 import 'leaflet-draw';
-import { Route, FlightSettings } from '../types';
-import { calculateDistance, calculateBearing, generateGridWaypoints } from '../services/geometryService';
-import { SpeedUnit } from '../App';
+import { Route, FlightSettings, SpeedUnit } from '../types';
+import { calculateDistance, calculateBearing, generateGridWaypoints, computeDestinationPoint } from '../services/geometryService';
 import { Language, t } from '../translations';
 import * as turf from '@turf/turf';
 
@@ -19,12 +18,19 @@ const HomeIcon = L.icon({
     popupAnchor: [1, -34]
 });
 
-// Purple Rotation Icon
-const RotateIcon = L.icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-violet.png',
-    shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-    iconSize: [20, 32],
-    iconAnchor: [10, 16] // Centered
+// Rotate Icon - Circle with Arrows
+const RotateDivIcon = L.divIcon({
+    className: 'rotate-handle-icon',
+    html: '<div style="background-color: white; border: 2px solid #8b5cf6; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.3); font-size: 18px; cursor: crosshair;">🔄</div>',
+    iconSize: [30, 30],
+    iconAnchor: [15, 15]
+});
+
+const PivotIcon = L.divIcon({
+    className: 'pivot-icon',
+    html: '<div style="background-color: #8b5cf6; width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 2px black;"></div>',
+    iconSize: [10, 10],
+    iconAnchor: [5, 5]
 });
 
 // Ruler Endpoint Icon
@@ -170,57 +176,93 @@ const DraggableHomeMarker: React.FC<{ position: L.LatLngExpression, routeName: s
     );
 };
 
-// Rotation Handle for Grids
+// Enhanced Rotation Handle with Lever Arm
 const GridRotationHandle: React.FC<{ route: Route, onRotate: (id: string, angle: number) => void }> = ({ route, onRotate }) => {
+    const map = useMap();
+    
+    // Only show if it looks like a grid (has originalPolygon or waypoints)
+    const polyData = route.originalPolygon || route.waypoints;
+    if (polyData.length < 3) return null;
+
     // Calculate centroid
-    const points = turf.points(route.waypoints.map(wp => [wp.longitude, wp.latitude]));
+    const points = turf.points(polyData.map(wp => [
+        (wp as any).longitude || (wp as any).lng, 
+        (wp as any).latitude || (wp as any).lat
+    ]));
     const center = turf.center(points);
     const centerCoords = center.geometry.coordinates; // [lng, lat]
-    
-    // We use a marker that the user can drag horizontally to rotate
-    // Simplified: Dragging updates a value based on X delta, or we use a custom slider logic
-    // Implementation: Dragging this marker updates rotation based on delta X pixels (1px = 1deg)
-    
-    const [startPos, setStartPos] = useState<{x: number} | null>(null);
-    const [startAngle, setStartAngle] = useState(route.gridRotation || 0);
+    const centerLatLng = L.latLng(centerCoords[1], centerCoords[0]);
+
+    // Calculate Lever Arm Radius (bbox diagonal / 2)
+    const bbox = turf.bbox(points);
+    const d1 = turf.point([bbox[0], bbox[1]]);
+    const d2 = turf.point([bbox[2], bbox[3]]);
+    const distKm = turf.distance(d1, d2);
+    // Set lever length to 60% of bounding box diagonal or min 50 meters
+    const leverDistMeters = Math.max(50, (distKm * 1000) * 0.6);
+
+    // Calculate current Handle Position based on rotation
+    // We want the handle to rotate visually with the grid
+    // Standard 0 deg = North (Up) in typical UI, but Turf 0 deg = East (Right).
+    // Let's align 0 deg with North for UI intuition.
+    const currentAngle = route.gridRotation || 0;
+    const handlePosObj = computeDestinationPoint(centerLatLng.lat, centerLatLng.lng, leverDistMeters, currentAngle);
+    const handleLatLng = L.latLng(handlePosObj.lat, handlePosObj.lng);
 
     const eventHandlers = useMemo(() => ({
-        dragstart(e: any) {
-             setStartPos({x: e.originalEvent.clientX});
-             setStartAngle(route.gridRotation || 0);
-        },
         drag(e: any) {
-             if (!startPos) return;
-             const currentX = e.originalEvent.clientX;
-             const delta = currentX - startPos.x;
-             // Sensitivity: 0.5 deg per pixel
-             const newAngle = (startAngle + (delta * 0.5)) % 360;
-             onRotate(route.id, newAngle);
+             const markerPt = map.latLngToContainerPoint(e.target.getLatLng());
+             const centerPt = map.latLngToContainerPoint(centerLatLng);
+             
+             // Calculate angle
+             // atan2(y, x) -> standard cartesian (0 is Right, 90 is Down)
+             const radians = Math.atan2(markerPt.y - centerPt.y, markerPt.x - centerPt.x);
+             
+             // Convert to degrees
+             let deg = radians * (180 / Math.PI);
+             
+             // Align: We want 0 to be Up (North).
+             // atan2: Right=0, Down=90, Left=180, Up=-90
+             // To make Up=0: +90
+             deg = (deg + 90) % 360;
+             if (deg < 0) deg += 360;
+             
+             onRotate(route.id, deg);
         },
         dragend(e: any) {
-            // Reset marker to center
-            e.target.setLatLng([centerCoords[1], centerCoords[0]]);
+            // Force re-render will reset position via props, but we can set it explicitly to avoid jitter
         }
-    }), [route.id, route.gridRotation, startPos, startAngle, onRotate, centerCoords]);
-
-    // Only show if it looks like a grid (enough points) or explicitly tagged as grid
-    // For now, assume if it has gridRotation prop, it's a grid candidate
-    if (route.waypoints.length < 3) return null;
+    }), [route.id, centerLatLng, map, onRotate]);
 
     return (
-         <Marker
-            position={[centerCoords[1], centerCoords[0]]}
-            icon={RotateIcon}
-            draggable={true}
-            eventHandlers={eventHandlers}
-            zIndexOffset={900}
-         >
-             <Popup>
-                 <strong>Grid Rotation</strong><br/>
-                 Current: {(route.gridRotation || 0).toFixed(0)}°<br/>
-                 <span className="text-xs">Drag left/right to rotate</span>
-             </Popup>
-         </Marker>
+         <>
+            {/* Pivot Point */}
+            <Marker position={centerLatLng} icon={PivotIcon} interactive={false} />
+
+            {/* Lever Arm Line */}
+            <Polyline 
+                positions={[centerLatLng, handleLatLng]} 
+                pathOptions={{ color: '#8b5cf6', weight: 2, dashArray: '5, 5', opacity: 0.8 }} 
+            />
+
+            {/* Rotation Handle */}
+            <Marker
+                position={handleLatLng}
+                icon={RotateDivIcon}
+                draggable={true}
+                eventHandlers={eventHandlers}
+                zIndexOffset={2000}
+            >
+             <Marker 
+                 position={handleLatLng} 
+                 icon={L.divIcon({
+                     className: 'angle-label',
+                     html: `<div style="background:white; padding:2px 4px; border-radius:4px; font-weight:bold; font-size:10px; border:1px solid #ccc; white-space:nowrap; transform: translate(15px, -15px);">${currentAngle.toFixed(0)}°</div>`,
+                     iconSize: [0,0]
+                 })}
+             />
+            </Marker>
+         </>
     );
 };
 

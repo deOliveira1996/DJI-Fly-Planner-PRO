@@ -1,7 +1,7 @@
+
 import React, { useState } from 'react';
-import { Route, Waypoint } from '../types';
+import { Route, Waypoint, SpeedUnit } from '../types';
 import { ArrowUp, ArrowDown, Trash2, Edit, ChevronDown, ChevronUp, X, Edit2 } from 'lucide-react';
-import { SpeedUnit } from '../App';
 import { t, Language } from '../translations';
 
 interface RouteManagerProps {
