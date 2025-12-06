@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { CalculatorResult, DronePreset } from '../types';
+import { CalculatorResult, DronePreset, DRONE_PRESETS } from '../types';
 import html2canvas from 'html2canvas';
 import { Download, Calculator as CalcIcon, Check } from 'lucide-react';
 import { t, Language } from '../translations';
@@ -7,23 +7,6 @@ import { t, Language } from '../translations';
 interface CalculatorProps {
     language: Language;
 }
-
-const PRESETS: DronePreset[] = [
-    { model: "DJI Mini 4 Pro (Wide)", fovH: 82.1, fovV: 49.4, notes: "Default" },
-    { model: "DJI Mini 3 / 3 Pro", fovH: 82.1, fovV: 49.4, notes: "Default" },
-    { model: "DJI Mini 2 / SE", fovH: 83.0, fovV: 48.0, notes: "Approx" },
-    { model: "DJI Air 3 (Wide)", fovH: 82.0, fovV: 49.0, notes: "24mm eq" },
-    { model: "DJI Air 3 (Medium Tele)", fovH: 35.0, fovV: 20.0, notes: "70mm eq" },
-    { model: "DJI Air 2S", fovH: 88.0, fovV: 56.5, notes: "22mm eq" },
-    { model: "DJI Mavic 3 Pro (Hasselblad)", fovH: 84.0, fovV: 70.2, notes: "24mm eq" },
-    { model: "DJI Mavic 3 Pro (Med Tele)", fovH: 35.0, fovV: 20.0, notes: "70mm eq" },
-    { model: "DJI Mavic 3 Enterprise (Wide)", fovH: 84.0, fovV: 70.0, notes: "4:3 Sensor" },
-    { model: "DJI Mavic 2 Pro", fovH: 77.0, fovV: 44.0, notes: "HQ Video" },
-    { model: "DJI Phantom 4 Pro", fovH: 84.0, fovV: 56.0, notes: "3:2 Photo" },
-    { model: "DJI Matrice 350 RTK (P1 35mm)", fovH: 63.5, fovV: 42.3, notes: "Full Frame" },
-    { model: "DJI Matrice 30T (Wide)", fovH: 71.5, fovV: 53.7, notes: "Wide spec" },
-    { model: "DJI Inspire 3 (X9 24mm)", fovH: 84.0, fovV: 48.0, notes: "Full Frame" },
-];
 
 export const Calculator: React.FC<CalculatorProps> = ({ language }) => {
     // Logic state
@@ -189,7 +172,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ language }) => {
 
                                 <div className="h-24 overflow-y-auto border border-slate-200 rounded p-1 bg-slate-50">
                                     <div className="grid grid-cols-1 gap-1">
-                                        {PRESETS.map(p => (
+                                        {DRONE_PRESETS.map(p => (
                                             <button 
                                                 key={p.model} 
                                                 onClick={() => handlePreset(p)} 

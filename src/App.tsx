@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { MapEditor } from './components/Map';
@@ -5,10 +6,11 @@ import { RouteManager } from './components/RouteManager';
 import { Calculator } from './components/Calculator';
 import { Route, FlightSettings, DEFAULT_SETTINGS, Waypoint, HomePoint, RouteStats } from './types';
 import { parseCSV, parseKML, exportLitchiZip, exportDJIKMLZip, exportDJIWPML, generateId } from './services/fileService';
-import { updateWaypointsWithBearings, estimateRouteStats } from './services/geometryService';
+import { updateWaypointsWithBearings, estimateRouteStats, generateGridWaypoints } from './services/geometryService';
 import { X, HelpCircle, Map as MapIcon, Table, Calculator as CalcIcon, Camera, CheckCircle, AlertCircle } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { t, Language } from './translations';
+import * as turf from '@turf/turf';
 
 const PROJECT_PREFIX = 'litchi_project_';
 
@@ -27,7 +29,7 @@ const App: React.FC = () => {
   const [settings, setSettings] = useState<FlightSettings>(DEFAULT_SETTINGS);
   
   // Stats
-  const [stats, setStats] = useState<RouteStats>({ totalDistance: 0, totalTimeMinutes: 0 });
+  const [stats, setStats] = useState<RouteStats>({ totalDistance: 0, totalTimeMinutes: 0, photoCount: 0, videoCount: 0 });
   const [selectedStatsRouteId, setSelectedStatsRouteId] = useState<string | 'all'>('all');
   
   const [isLoading, setIsLoading] = useState(false);
@@ -217,6 +219,9 @@ const App: React.FC = () => {
 
   // --- Logic 4: Handle Drawing ---
   const handleRouteCreated = (coords: { lat: number, lng: number }[]) => {
+    // If in Mapping Mode, default action is Take Photo (1)
+    const defaultAction = settings.flightMode === 'mapping' ? 1 : settings.action1;
+
     const newWaypoints: Waypoint[] = coords.map((c, idx) => ({
       id: idx + 1,
       latitude: c.lat,
@@ -227,7 +232,7 @@ const App: React.FC = () => {
       rotationDir: 0,
       gimbalMode: settings.gimbalMode,
       gimbalPitch: settings.gimbalPitch,
-      actionType1: settings.action1,
+      actionType1: defaultAction,
       actionParam1: 0,
       actionType2: -1,
       actionParam2: 0,
@@ -254,7 +259,8 @@ const App: React.FC = () => {
       waypoints: finalWps,
       color: '#ff5722',
       locked: false,
-      homePoint: { lat: finalWps[0].latitude - 0.0001, lng: finalWps[0].longitude }
+      homePoint: { lat: finalWps[0].latitude - 0.0001, lng: finalWps[0].longitude },
+      gridRotation: settings.flightMode === 'mapping' ? 0 : undefined
     };
 
     setRoutes(prev => [...prev, newRoute]);
@@ -313,6 +319,49 @@ const App: React.FC = () => {
   const handleHomePointUpdate = (routeId: string, lat: number, lng: number) => {
       setRoutes(prev => prev.map(r => r.id === routeId ? { ...r, homePoint: { lat, lng } } : r));
   };
+  
+  // Handle Grid Rotation
+  const handleRotationUpdate = (routeId: string, angle: number) => {
+      setRoutes(prev => prev.map(route => {
+          if (route.id !== routeId || route.locked) return route;
+          
+          // Re-calculate grid based on original polygon hull
+          // Note: In a real app we might want to store the original hull separately.
+          // Here, we can assume the current points roughly define the area, OR
+          // we should store the 'bounds' or 'polygon' separately.
+          // Simplification: We only support rotating a fresh grid. 
+          // Re-generating from current waypoints is tricky because they are zig-zag.
+          // Ideally we store the original polygon points in Route.
+          // For now, let's assume we re-calculate based on convex hull of current points?
+          // Better: We stored the gridRotation. If we want to change it, we need the original polygon.
+          // LIMITATION: Without storing original polygon, we can't cleanly re-generate.
+          // FIX: In `handleRouteCreated` we generate points. If we want dynamic updates, 
+          // we need to keep the polygon.
+          // Hack: We will just update the property here. To enable real-time re-generation, 
+          // we would need to restructure `Route` to hold `originalPolygonCoords`.
+          
+          // As a fallback for this specific request context where we can't refactor everything:
+          // We will update the state. The user has to drag the handle which triggers this.
+          // But to make it WORK, `MapEditor` would need to re-call `generateGridWaypoints` using the Convex Hull of current points.
+          
+          const points = route.waypoints.map(wp => ({lat: wp.latitude, lng: wp.longitude}));
+          const convexHull = turf.convex(turf.points(points.map(p => [p.lng, p.lat])));
+          
+          if (!convexHull) return { ...route, gridRotation: angle };
+
+          const polyCoords = convexHull.geometry.coordinates[0].map(p => ({lat: p[1], lng: p[0]}));
+          const newGridCoords = generateGridWaypoints(polyCoords, settings, angle);
+          
+          const newWps: Waypoint[] = newGridCoords.map((c, idx) => ({
+             ...route.waypoints[0], // Copy props from first
+             id: idx + 1,
+             latitude: c.lat,
+             longitude: c.lng
+          }));
+
+          return { ...route, waypoints: newWps, gridRotation: angle };
+      }));
+  };
 
   const handleDetailedUpdate = (routeId: string, wpId: number, field: string, value: any) => {
       setRoutes(prev => prev.map(route => {
@@ -333,8 +382,6 @@ const App: React.FC = () => {
       setRoutes(prev => prev.map(route => {
           if (route.id !== routeId || route.locked) return route;
           
-          // Remove the WP, but DO NOT re-index the IDs of remaining WPs.
-          // This keeps ID persistent as a label.
           const filtered = route.waypoints.filter(wp => wp.id !== wpId);
           
           let finalWps = filtered;
@@ -361,7 +408,6 @@ const App: React.FC = () => {
               return route;
           }
           
-          // We DO NOT re-index ID here. Order is determined by array position. ID persists.
           let finalWps = newWps;
           if (settings.headingMode === 'auto_bearing') {
              finalWps = updateWaypointsWithBearings(newWps);
@@ -404,7 +450,7 @@ const App: React.FC = () => {
         onClearRoutes={() => { setRoutes([]); showToast('All routes cleared.', 'info'); }}
         onApplySettings={applySettingsToRoutes}
         onPromptRename={handleOpenRenameModal}
-        onRenameRoute={() => {}} // Deprecated by onPromptRename, keeping prop sig if needed or removing
+        onRenameRoute={() => {}} 
         onDeleteRoute={handleDeleteRoute}
         onToggleLock={toggleRouteLock}
         onUndo={handleUndo}
@@ -466,9 +512,12 @@ const App: React.FC = () => {
                         routes={routes}
                         measureMode={measureMode}
                         headingMode={settings.headingMode}
+                        flightMode={settings.flightMode}
+                        currentSettings={settings}
                         onRouteCreated={handleRouteCreated} 
                         onWaypointUpdate={handleWaypointUpdate}
                         onHomePointUpdate={handleHomePointUpdate}
+                        onRotationUpdate={handleRotationUpdate}
                         speedUnit={speedUnit}
                         language={language}
                     />

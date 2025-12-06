@@ -1,20 +1,30 @@
+
 import React, { useEffect, useState, useMemo } from 'react';
-import { MapContainer, TileLayer, FeatureGroup, Polyline, Marker, Popup, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, FeatureGroup, Polyline, Marker, Popup, useMapEvents, LayersControl } from 'react-leaflet';
 import { EditControl } from 'react-leaflet-draw';
 import L from 'leaflet';
 import 'leaflet-draw';
 import { Route, FlightSettings } from '../types';
-import { calculateDistance, calculateBearing } from '../services/geometryService';
+import { calculateDistance, calculateBearing, generateGridWaypoints } from '../services/geometryService';
 import { SpeedUnit } from '../App';
-import { Language } from '../translations';
+import { Language, t } from '../translations';
+import * as turf from '@turf/turf';
 
-// Custom Green Home Icon (Scaled to 30x30 to match Arrow)
+// Custom Green Home Icon
 const HomeIcon = L.icon({
     iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
     shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-    iconSize: [25, 41], // Default Leaflet marker aspect ratio
-    iconAnchor: [12, 41],
+    iconSize: [30, 48],
+    iconAnchor: [15, 48],
     popupAnchor: [1, -34]
+});
+
+// Purple Rotation Icon
+const RotateIcon = L.icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-violet.png',
+    shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+    iconSize: [20, 32],
+    iconAnchor: [10, 16] // Centered
 });
 
 // Ruler Endpoint Icon
@@ -25,7 +35,7 @@ const RulerIcon = L.divIcon({
     iconAnchor: [6, 6]
 });
 
-// Create a custom DivIcon with an SVG Arrow - RESIZED TO 30px
+// Arrow Icon
 const createArrowIcon = (heading: number, color: string, isLocked: boolean) => {
     const fillColor = isLocked ? '#888888' : color;
     const svg = `
@@ -53,14 +63,17 @@ interface MapProps {
   routes: Route[];
   measureMode: boolean;
   headingMode: FlightSettings['headingMode']; 
+  flightMode: FlightSettings['flightMode'];
+  currentSettings: FlightSettings;
   onRouteCreated: (latlngs: { lat: number, lng: number }[]) => void;
   onWaypointUpdate: (routeId: string, wpId: number, lat: number, lng: number) => void;
   onHomePointUpdate: (routeId: string, lat: number, lng: number) => void;
+  onRotationUpdate: (routeId: string, angle: number) => void;
   speedUnit: SpeedUnit;
   language: Language;
 }
 
-// Draggable Marker Component for Waypoints (Arrow)
+// Draggable Marker Component for Waypoints
 interface DraggableArrowProps {
   position: L.LatLngExpression;
   routeId: string;
@@ -70,7 +83,6 @@ interface DraggableArrowProps {
   color: string;
   isLocked: boolean;
   onUpdate: (rid: string, wid: number, lat: number, lng: number) => void;
-  // Metadata for Popup
   altitude: number;
   speed: number;
   gimbalPitch: number;
@@ -106,7 +118,7 @@ const DraggableArrow: React.FC<DraggableArrowProps> = ({
   const displaySpeed = speedUnit === 'kmh' ? (speed * 3.6).toFixed(1) + ' km/h' : speed.toFixed(1) + ' m/s';
 
   const actionMap: Record<number, string> = {
-      [-1]: "None", 0: "Stay", 2: "Start Rec", 3: "Stop Rec", 5: "Rotate"
+      [-1]: "None", 0: "Stay", 1: "Photo", 2: "Start Rec", 3: "Stop Rec", 5: "Rotate"
   };
 
   return (
@@ -131,7 +143,6 @@ const DraggableArrow: React.FC<DraggableArrowProps> = ({
   )
 };
 
-// Home Marker
 const DraggableHomeMarker: React.FC<{ position: L.LatLngExpression, routeName: string, onChange: (lat: number, lng: number) => void }> = ({ position, routeName, onChange }) => {
     const eventHandlers = useMemo(() => ({
         dragend(e: any) {
@@ -159,11 +170,102 @@ const DraggableHomeMarker: React.FC<{ position: L.LatLngExpression, routeName: s
     );
 };
 
-// Advanced Ruler Component
+// Rotation Handle for Grids
+const GridRotationHandle: React.FC<{ route: Route, onRotate: (id: string, angle: number) => void }> = ({ route, onRotate }) => {
+    // Calculate centroid
+    const points = turf.points(route.waypoints.map(wp => [wp.longitude, wp.latitude]));
+    const center = turf.center(points);
+    const centerCoords = center.geometry.coordinates; // [lng, lat]
+    
+    // We use a marker that the user can drag horizontally to rotate
+    // Simplified: Dragging updates a value based on X delta, or we use a custom slider logic
+    // Implementation: Dragging this marker updates rotation based on delta X pixels (1px = 1deg)
+    
+    const [startPos, setStartPos] = useState<{x: number} | null>(null);
+    const [startAngle, setStartAngle] = useState(route.gridRotation || 0);
+
+    const eventHandlers = useMemo(() => ({
+        dragstart(e: any) {
+             setStartPos({x: e.originalEvent.clientX});
+             setStartAngle(route.gridRotation || 0);
+        },
+        drag(e: any) {
+             if (!startPos) return;
+             const currentX = e.originalEvent.clientX;
+             const delta = currentX - startPos.x;
+             // Sensitivity: 0.5 deg per pixel
+             const newAngle = (startAngle + (delta * 0.5)) % 360;
+             onRotate(route.id, newAngle);
+        },
+        dragend(e: any) {
+            // Reset marker to center
+            e.target.setLatLng([centerCoords[1], centerCoords[0]]);
+        }
+    }), [route.id, route.gridRotation, startPos, startAngle, onRotate, centerCoords]);
+
+    // Only show if it looks like a grid (enough points) or explicitly tagged as grid
+    // For now, assume if it has gridRotation prop, it's a grid candidate
+    if (route.waypoints.length < 3) return null;
+
+    return (
+         <Marker
+            position={[centerCoords[1], centerCoords[0]]}
+            icon={RotateIcon}
+            draggable={true}
+            eventHandlers={eventHandlers}
+            zIndexOffset={900}
+         >
+             <Popup>
+                 <strong>Grid Rotation</strong><br/>
+                 Current: {(route.gridRotation || 0).toFixed(0)}°<br/>
+                 <span className="text-xs">Drag left/right to rotate</span>
+             </Popup>
+         </Marker>
+    );
+};
+
+const SegmentDistanceLabels: React.FC<{ route: Route }> = ({ route }) => {
+    if (route.waypoints.length < 2) return null;
+
+    const segments = [];
+    for (let i = 0; i < route.waypoints.length - 1; i++) {
+        const wp1 = route.waypoints[i];
+        const wp2 = route.waypoints[i+1];
+        
+        const dist = calculateDistance(wp1.latitude, wp1.longitude, wp2.latitude, wp2.longitude);
+        const distText = dist > 1000 ? `${(dist/1000).toFixed(2)} km` : `${dist.toFixed(0)} m`;
+
+        const midLat = (wp1.latitude + wp2.latitude) / 2;
+        const midLng = (wp1.longitude + wp2.longitude) / 2;
+        
+        segments.push({
+            pos: [midLat, midLng] as L.LatLngExpression,
+            text: distText
+        });
+    }
+
+    return (
+        <>
+            {segments.map((seg, idx) => (
+                <Marker 
+                    key={idx}
+                    position={seg.pos}
+                    icon={L.divIcon({
+                        className: 'segment-label',
+                        html: `<div style="font-size: 10px; font-weight: bold; color: ${route.color}; text-shadow: 1px 1px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff;">${seg.text}</div>`,
+                        iconSize: [40, 12],
+                        iconAnchor: [20, 6]
+                    })}
+                />
+            ))}
+        </>
+    );
+};
+
+
 const RulerComponent: React.FC<{ active: boolean }> = ({ active }) => {
     const [points, setPoints] = useState<L.LatLng[]>([]);
 
-    // Map Click Listener
     useMapEvents({
         click(e) {
             if (!active) return;
@@ -175,12 +277,10 @@ const RulerComponent: React.FC<{ active: boolean }> = ({ active }) => {
         }
     });
 
-    // Reset when tool disabled
     useEffect(() => {
         if (!active) setPoints([]);
     }, [active]);
 
-    // Handle Drag of Endpoints
     const updatePoint = (index: number, latlng: L.LatLng) => {
         setPoints(prev => {
             const newPoints = [...prev];
@@ -191,7 +291,6 @@ const RulerComponent: React.FC<{ active: boolean }> = ({ active }) => {
 
     if (!active || points.length === 0) return null;
 
-    // Calculate details for the label
     let labelPos: L.LatLngExpression | null = null;
     let distanceText = "";
     let rotationDeg = 0;
@@ -202,13 +301,9 @@ const RulerComponent: React.FC<{ active: boolean }> = ({ active }) => {
         const dist = calculateDistance(p1.lat, p1.lng, p2.lat, p2.lng);
         distanceText = dist > 1000 ? `${(dist/1000).toFixed(2)} km` : `${dist.toFixed(1)} m`;
         
-        // Midpoint
         labelPos = L.latLng((p1.lat + p2.lat) / 2, (p1.lng + p2.lng) / 2);
         
-        // Calculate bearing for rotation
         const bearing = calculateBearing(p1.lat, p1.lng, p2.lat, p2.lng);
-        
-        // Keep text right-side up
         rotationDeg = bearing;
         if (bearing > 90 && bearing <= 270) {
             rotationDeg = bearing - 180;
@@ -237,9 +332,9 @@ const RulerComponent: React.FC<{ active: boolean }> = ({ active }) => {
                             position={labelPos}
                             icon={L.divIcon({
                                 className: 'ruler-label-container',
-                                html: `<div style="transform: rotate(${rotationDeg}deg); background: white; padding: 2px 6px; border-radius: 4px; border: 1px solid #3b82f6; font-size: 10px; font-weight: bold; color: #1d4ed8; white-space: nowrap;">${distanceText}</div>`,
-                                iconSize: [0, 0], // Hidden icon, just HTML
-                                iconAnchor: [0, 0] // Center? We rely on transform
+                                html: `<div style="transform: rotate(${rotationDeg}deg); font-size: 14px; font-weight: 800; color: #1d4ed8; white-space: nowrap; text-shadow: 2px 2px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff;">${distanceText}</div>`,
+                                iconSize: [0, 0], 
+                                iconAnchor: [0, 0] 
                             })}
                         />
                     )}
@@ -250,8 +345,8 @@ const RulerComponent: React.FC<{ active: boolean }> = ({ active }) => {
 }
 
 export const MapEditor: React.FC<MapProps> = ({ 
-    routes, measureMode, headingMode,
-    onRouteCreated, onWaypointUpdate, onHomePointUpdate,
+    routes, measureMode, headingMode, flightMode, currentSettings,
+    onRouteCreated, onWaypointUpdate, onHomePointUpdate, onRotationUpdate,
     speedUnit, language
 }) => {
   const [ready, setReady] = useState(false);
@@ -266,17 +361,21 @@ export const MapEditor: React.FC<MapProps> = ({
       const latlngs = layer.getLatLngs();
       let flatLatLngs = Array.isArray(latlngs[0]) ? latlngs[0] : latlngs;
       
-      // FIX POLYGON CLOSING
-      // If polygon, Leaflet draw provides points [A, B, C]. 
-      // We must visually and data-wise close it: [A, B, C, A].
       if (layerType === 'polygon' && flatLatLngs.length > 2) {
           flatLatLngs = [...flatLatLngs, flatLatLngs[0]];
       }
 
-      const simpleCoords = flatLatLngs.map((ll: any) => ({
+      let simpleCoords = flatLatLngs.map((ll: any) => ({
         lat: ll.lat,
         lng: ll.lng
       }));
+
+      // --- MAPPING MODE LOGIC ---
+      if (flightMode === 'mapping' && layerType === 'polygon') {
+          // Generate Grid inside Polygon with 0 rotation initially
+          simpleCoords = generateGridWaypoints(simpleCoords, currentSettings, 0);
+      }
+      // --------------------------
 
       onRouteCreated(simpleCoords);
       layer.remove();
@@ -293,14 +392,24 @@ export const MapEditor: React.FC<MapProps> = ({
             style={{ height: '100%', width: '100%' }}
             scrollWheelZoom={true}
         >
-            <TileLayer
-                attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
-                url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-            />
+            <LayersControl position="topright">
+                <LayersControl.BaseLayer name={t("map_layer_street", language)}>
+                    <TileLayer
+                        attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
+                        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                    />
+                </LayersControl.BaseLayer>
+                <LayersControl.BaseLayer checked name={t("map_layer_sat", language)}>
+                    <TileLayer
+                        attribution='Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+                        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                    />
+                </LayersControl.BaseLayer>
+            </LayersControl>
             
             <FeatureGroup>
                 <EditControl
-                    position="topright"
+                    position="topleft"
                     onCreated={_onCreated}
                     draw={{
                         rectangle: false,
@@ -337,17 +446,20 @@ export const MapEditor: React.FC<MapProps> = ({
                         <Popup><strong>{route.name}</strong></Popup>
                     </Polyline>
                     
+                    <SegmentDistanceLabels route={route} />
+                    
+                    {/* Render Rotation Handle if in Mapping Mode and rotation is tracked */}
+                    {flightMode === 'mapping' && route.gridRotation !== undefined && (
+                        <GridRotationHandle route={route} onRotate={onRotationUpdate} />
+                    )}
+
                     {route.waypoints.map((wp, idx) => {
-                        // Calculate Visual Heading
                         let displayHeading = Number(wp.heading);
-                        
-                        // If Mode is Auto Path, point arrow to next point
                         if (headingMode === 'auto_path') {
                             if (idx < route.waypoints.length - 1) {
                                 const nextWp = route.waypoints[idx + 1];
                                 displayHeading = calculateBearing(wp.latitude, wp.longitude, nextWp.latitude, nextWp.longitude);
                             } else if (idx > 0) {
-                                // Last point aligns with previous segment
                                 const prevWp = route.waypoints[idx - 1];
                                 displayHeading = calculateBearing(prevWp.latitude, prevWp.longitude, wp.latitude, wp.longitude);
                             }
@@ -364,7 +476,6 @@ export const MapEditor: React.FC<MapProps> = ({
                                     color={route.color}
                                     isLocked={route.locked}
                                     onUpdate={onWaypointUpdate}
-                                    // Info for popup
                                     altitude={wp.altitude}
                                     speed={wp.speed}
                                     gimbalPitch={wp.gimbalPitch}

@@ -38,29 +38,44 @@ export const RouteManager: React.FC<RouteManagerProps> = ({
     }> = ({ value, onChange }) => {
         const [localVal, setLocalVal] = useState(String(value));
 
-        const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-            const raw = e.target.value;
-            setLocalVal(raw);
-            if (raw !== '' && raw !== '-') {
-                onChange(Number(raw));
-            }
-        };
-
+        // When external value changes (e.g. from Batch Edit), update local
         React.useEffect(() => {
-            if (Number(localVal) !== value && localVal !== '' && localVal !== '-') {
+            // Only update if not currently editing (to avoid cursor jumps)
+            // But strict equality check helps
+            if (Number(localVal) !== value && localVal !== '' && localVal !== '-' && localVal !== '.') {
                 setLocalVal(String(value));
-            } else if (localVal === '' || localVal === '-') {
-                // Keep local state
-            } else {
-                 setLocalVal(String(value));
             }
         }, [value]);
 
-        return <input type="text" className={inputClass} value={localVal} onChange={handleChange} />;
+        const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+            const raw = e.target.value;
+            setLocalVal(raw);
+            if (raw !== '' && raw !== '-' && raw !== '.' && !isNaN(Number(raw))) {
+                onChange(Number(raw));
+            }
+        };
+        
+        const handleBlur = () => {
+             // On blur, format nicelly
+             if (localVal !== '' && localVal !== '-') {
+                 const num = Number(localVal);
+                 if (!isNaN(num)) {
+                     setLocalVal(num.toFixed(1).replace(/\.0$/, '')); // Format to max 1 decimal
+                     onChange(num);
+                 }
+             }
+        };
+
+        return <input 
+            type="text" 
+            className={inputClass} 
+            value={localVal} 
+            onChange={handleChange} 
+            onBlur={handleBlur}
+        />;
     };
 
 
-    // Speed Conversion Helper
     const toDisplaySpeed = (ms: number) => {
         if (speedUnit === 'kmh') return parseFloat((ms * 3.6).toFixed(2));
         return ms;
@@ -113,6 +128,7 @@ export const RouteManager: React.FC<RouteManagerProps> = ({
                             <select className={inputClass} value={wp.actionType1} onChange={e => handleChange('actionType1', Number(e.target.value))}>
                                 <option value="-1">{t("act_none", language)}</option>
                                 <option value="0">{t("act_stay", language)}</option>
+                                <option value="1">{t("act_photo", language)}</option>
                                 <option value="2">{t("act_start_rec", language)}</option>
                                 <option value="3">{t("act_stop_rec", language)}</option>
                                 <option value="5">{t("act_rotate", language)}</option>
@@ -226,6 +242,7 @@ export const RouteManager: React.FC<RouteManagerProps> = ({
                                                 >
                                                     <option value="-1">{t("act_none", language)}</option>
                                                     <option value="0">{t("act_stay", language)}</option>
+                                                    <option value="1">{t("act_photo", language)}</option>
                                                     <option value="2">{t("act_start_rec", language)}</option>
                                                     <option value="3">{t("act_stop_rec", language)}</option>
                                                     <option value="5">{t("act_rotate", language)}</option>

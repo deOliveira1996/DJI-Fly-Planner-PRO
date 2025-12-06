@@ -1,3 +1,5 @@
+
+
 export type Language = 'en' | 'pt';
 
 export const t = (key: string, lang: Language): string => {
@@ -9,6 +11,8 @@ export const t = (key: string, lang: Language): string => {
     // Tools
     "ruler_tool": { en: "Ruler Tool", pt: "Ferramenta Régua" },
     "ruler_on": { en: "Ruler ON", pt: "Régua ATIVA" },
+    "map_layer_street": { en: "Street Map", pt: "Mapa de Rua" },
+    "map_layer_sat": { en: "Satellite", pt: "Satélite" },
     
     // Workspace
     "workspaces": { en: "Workspaces", pt: "Áreas de Trabalho" },
@@ -21,6 +25,8 @@ export const t = (key: string, lang: Language): string => {
     "flight_estimates": { en: "Flight Estimates", pt: "Estimativas de Voo" },
     "total_dist": { en: "Total Dist", pt: "Distância Total" },
     "est_time": { en: "Est. Time", pt: "Tempo Est." },
+    "est_photos": { en: "Est. Photos", pt: "Fotos Est." },
+    "est_videos": { en: "Est. Videos", pt: "Vídeos Est." },
     "stats_note": { en: "Includes commute & action delays.", pt: "Inclui deslocamento e atrasos de ação." },
     "view_stats_for": { en: "View Stats For:", pt: "Ver Stats Para:" },
     "all_routes": { en: "All Routes (Sum)", pt: "Todas as Rotas (Soma)" },
@@ -39,6 +45,13 @@ export const t = (key: string, lang: Language): string => {
     
     // Settings
     "flight_settings": { en: "Flight Settings", pt: "Configurações de Voo" },
+    "mode_standard": { en: "Standard Mode", pt: "Modo Padrão" },
+    "mode_mapping": { en: "Mapping Mode", pt: "Modo Mapeamento" },
+    "select_drone": { en: "Select Drone", pt: "Selecionar Drone" },
+    "overlap_v": { en: "Forward Overlap (%)", pt: "Sobreposição Frontal (%)" },
+    "overlap_h": { en: "Side Overlap (%)", pt: "Sobreposição Lateral (%)" },
+    "calc_interval": { en: "Calc. Interval (s)", pt: "Intervalo Calc. (s)" },
+
     "altitude": { en: "Altitude (m)", pt: "Altitude (m)" },
     "speed": { en: "Speed", pt: "Velocidade" },
     "altitude_mode": { en: "Altitude Mode", pt: "Modo de Altitude" },
@@ -58,6 +71,7 @@ export const t = (key: string, lang: Language): string => {
     // Actions Options
     "act_none": { en: "None", pt: "Nenhuma" },
     "act_stay": { en: "Stay (Hover)", pt: "Pairar (Stay)" },
+    "act_photo": { en: "Take Photo", pt: "Tirar Foto" },
     "act_start_rec": { en: "Start Rec", pt: "Iniciar Gravação" },
     "act_stop_rec": { en: "Stop Rec", pt: "Parar Gravação" },
     "act_rotate": { en: "Rotate Aircraft", pt: "Girar Aeronave" },
