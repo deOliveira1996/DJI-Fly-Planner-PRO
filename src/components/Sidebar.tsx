@@ -5,6 +5,7 @@ import { FlightSettings, Route, RouteStats, DRONE_PRESETS, SpeedUnit } from '../
 import { Upload, Download, Settings, Trash2, Undo2, XCircle, Plane, FolderOpen, Save, Trash, Lock, Unlock, Clock, Ruler, Edit2, Camera, Video, Image } from 'lucide-react';
 import { t, Language } from '../translations';
 import { calculatePhotoInterval } from '../services/geometryService';
+import icon from '../../assets/icon.png';
 
 interface SidebarProps {
   settings: FlightSettings;
@@ -169,7 +170,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-4 bg-blue-600 text-white shadow-md">
         <div className="flex justify-between items-start">
             <div className="flex items-center gap-2">
-                <img src="DFP.png" alt="DFP" className="w-8 h-8 rounded-md bg-white object-contain" />
+                <img src={icon} alt="DFP" className="w-10 h-10 rounded-full bg-white object-contain" />
                 <div>
                     <h1 className="text-xl font-bold leading-tight">{t("app_title", language)}</h1>
                     <p className="text-xs text-blue-100 font-medium">{t("by_author", language)}</p>
