@@ -1,9 +1,10 @@
+
+
 import React, { useRef, useState, useEffect } from 'react';
-import { FlightSettings, Route, RouteStats } from '../types';
-import { Upload, Download, Settings, Trash2, PenTool, Undo2, XCircle, Plane, FolderOpen, Save, Trash, Lock, Unlock, Clock, MapPin, Ruler, Edit2, Globe } from 'lucide-react';
-import { SpeedUnit } from '../App';
+import { FlightSettings, Route, RouteStats, DRONE_PRESETS, SpeedUnit } from '../types';
+import { Upload, Download, Settings, Trash2, Undo2, XCircle, Plane, FolderOpen, Save, Trash, Lock, Unlock, Clock, Ruler, Edit2, Camera, Video, Image } from 'lucide-react';
 import { t, Language } from '../translations';
-import icon from '../../assets/icon.png';
+import { calculatePhotoInterval } from '../services/geometryService';
 
 interface SidebarProps {
   settings: FlightSettings;
@@ -38,6 +39,67 @@ interface SidebarProps {
   setLanguage: (l: Language) => void;
 }
 
+// Reusable Numeric Input handling natural typing & validation
+const SidebarNumberInput = ({ 
+    value, 
+    onChange, 
+    className,
+    min,
+    max,
+    step
+}: { 
+    value: number, 
+    onChange: (val: number) => void, 
+    className: string,
+    min?: number,
+    max?: number,
+    step?: number
+}) => {
+    const [local, setLocal] = useState(String(value));
+    
+    useEffect(() => {
+        if (Number(local) !== value && local !== '' && local !== '-' && local !== '.') {
+            setLocal(String(value));
+        }
+    }, [value]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setLocal(e.target.value);
+    };
+
+    const handleBlur = () => {
+        let parsed = parseFloat(local);
+        if (isNaN(parsed)) {
+            parsed = value;
+        }
+        
+        // Validation clamping
+        if (min !== undefined && parsed < min) parsed = min;
+        if (max !== undefined && parsed > max) parsed = max;
+
+        onChange(parsed);
+        setLocal(String(parsed));
+    };
+    
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+    };
+
+    return (
+        <input 
+            type="number" 
+            className={`${className} ${Number(local) < (min ?? -Infinity) || Number(local) > (max ?? Infinity) ? 'border-red-500 focus:ring-red-500' : ''}`}
+            value={local} 
+            onChange={handleChange} 
+            onBlur={handleBlur} 
+            onKeyDown={handleKeyDown} 
+            min={min}
+            max={max}
+            step={step}
+        />
+    );
+};
+
 export const Sidebar: React.FC<SidebarProps> = ({
   settings,
   setSettings,
@@ -68,25 +130,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [projectName, setProjectName] = useState('');
-  
-  // Local state for numeric inputs to allow typing "-", "." etc
-  const [localAltitude, setLocalAltitude] = useState(String(settings.altitude));
-  const [localSpeed, setLocalSpeed] = useState('');
-  const [localHeading, setLocalHeading] = useState(String(settings.headingManual));
-  const [localGimbal, setLocalGimbal] = useState(String(settings.gimbalPitch));
-  const [localCurve, setLocalCurve] = useState(String(settings.curveSize));
 
-  // Sync props to local state when props change externally
-  useEffect(() => { setLocalAltitude(String(settings.altitude)); }, [settings.altitude]);
-  useEffect(() => { setLocalHeading(String(settings.headingManual)); }, [settings.headingManual]);
-  useEffect(() => { setLocalGimbal(String(settings.gimbalPitch)); }, [settings.gimbalPitch]);
-  useEffect(() => { setLocalCurve(String(settings.curveSize)); }, [settings.curveSize]);
-  
-  // Speed sync
+  // Auto Calculate Photo Interval if Mapping Mode is active
   useEffect(() => {
-     const val = speedUnit === 'kmh' ? settings.speedKmh : (settings.speedKmh / 3.6);
-     setLocalSpeed(val.toFixed(2));
-  }, [settings.speedKmh, speedUnit]);
+    if (settings.flightMode === 'mapping') {
+        const interval = calculatePhotoInterval(
+            settings.altitude,
+            settings.speedKmh,
+            settings.selectedDroneModel,
+            settings.mappingOverlap // Using Vertical Overlap for interval calc
+        );
+        setSettings(prev => ({ ...prev, photoTimeInterval: interval }));
+    }
+  }, [settings.flightMode, settings.altitude, settings.speedKmh, settings.selectedDroneModel, settings.mappingOverlap]);
+
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -102,48 +159,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  const handleRawChange = (
-      setter: React.Dispatch<React.SetStateAction<string>>, 
-      key: keyof FlightSettings, 
-      val: string
-  ) => {
-      setter(val);
-      if (val !== '' && val !== '-') {
-          setSettings(prev => ({ ...prev, [key]: Number(val) }));
-      }
-  };
-
-  const handleSpeedRawChange = (val: string) => {
-      setLocalSpeed(val);
-      if (val !== '' && val !== '-') {
-          const num = Number(val);
-          if (speedUnit === 'kmh') {
-              setSettings(prev => ({ ...prev, speedKmh: num }));
-          } else {
-              setSettings(prev => ({ ...prev, speedKmh: num * 3.6 }));
-          }
-      }
-  };
-
   // High contrast white input
-  // Changed border to slate-300 for clearer visibility
   const inputClass = "w-full bg-white text-gray-900 border border-slate-300 rounded text-sm p-2 focus:ring-2 focus:ring-blue-500 outline-none placeholder-gray-400";
+  // Button Base Class
+  const btnBase = "transform transition active:scale-95 shadow-sm hover:shadow-md rounded font-medium text-sm flex items-center justify-center gap-2 px-3 py-2";
 
   return (
     <div className="w-full md:w-96 bg-slate-50 border-r border-slate-200 h-full overflow-y-auto flex flex-col shadow-lg z-20">
       <div className="p-4 bg-blue-600 text-white shadow-md">
         <div className="flex justify-between items-start">
             <div className="flex items-center gap-2">
-                <img src={icon} alt="DFP" className="w-10 h-10 rounded-full bg-white object-contain" />
+                <img src="DFP.png" alt="DFP" className="w-8 h-8 rounded-md bg-white object-contain" />
                 <div>
                     <h1 className="text-xl font-bold leading-tight">{t("app_title", language)}</h1>
                     <p className="text-xs text-blue-100 font-medium">{t("by_author", language)}</p>
                 </div>
             </div>
-            {/* Lang Switch */}
             <button 
                 onClick={() => setLanguage(language === 'en' ? 'pt' : 'en')}
-                className="bg-blue-700 hover:bg-blue-800 text-xs px-2 py-1 rounded border border-blue-500 font-bold"
+                className="bg-blue-700 hover:bg-blue-800 text-xs px-2 py-1 rounded border border-blue-500 font-bold active:scale-95 transition-transform"
             >
                 {language === 'en' ? '🇺🇸 EN' : '🇧🇷 PT'}
             </button>
@@ -156,7 +190,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <section className="bg-white p-2 rounded border border-slate-200 flex gap-2 justify-center shadow-sm">
             <button 
                 onClick={() => setMeasureMode(!measureMode)}
-                className={`flex-1 flex flex-col items-center justify-center p-2 rounded text-xs font-bold transition ${measureMode ? 'bg-blue-100 text-blue-700 border border-blue-300' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
+                className={`flex-1 flex flex-col items-center justify-center p-2 rounded text-xs font-bold transition transform active:scale-95 ${measureMode ? 'bg-blue-100 text-blue-700 border border-blue-300' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
             >
                 <Ruler size={20} className="mb-1"/>
                 {measureMode ? t("ruler_on", language) : t("ruler_tool", language)}
@@ -181,7 +215,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button 
               onClick={handleSaveClick}
               disabled={!projectName.trim()}
-              className="bg-green-600 disabled:bg-slate-300 text-white p-2 rounded hover:bg-green-700 transition"
+              className={`${btnBase} bg-green-600 disabled:bg-slate-300 text-white hover:bg-green-700`}
               title={t("save", language)}
             >
               <Save size={18} />
@@ -215,7 +249,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div className="mb-3">
                     <label className="text-[10px] uppercase font-bold text-blue-500 mb-1 block">{t("view_stats_for", language)}</label>
                     <select 
-                        className="w-full text-xs p-1 rounded border border-blue-200 text-slate-700 bg-white"
+                        className="w-full text-xs p-1 rounded border border-blue-200 text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                         value={selectedStatsRouteId}
                         onChange={(e) => setSelectedStatsRouteId(e.target.value)}
                     >
@@ -243,6 +277,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </div>
                     </div>
                 </div>
+                
+                {/* File Summary Row */}
+                <div className="grid grid-cols-2 gap-4 mt-3 pt-2 border-t border-blue-200">
+                     <div className="text-center">
+                        <span className="block text-[10px] text-blue-500 font-bold uppercase">{t("est_photos", language)}</span>
+                        <div className="text-md font-bold text-slate-700 flex items-center justify-center gap-1">
+                            <Image size={14} className="text-orange-500"/> {stats.photoCount}
+                        </div>
+                     </div>
+                     <div className="text-center border-l border-blue-200">
+                        <span className="block text-[10px] text-blue-500 font-bold uppercase">{t("est_videos", language)}</span>
+                         <div className="text-md font-bold text-slate-700 flex items-center justify-center gap-1">
+                            <Video size={14} className="text-red-500"/> {stats.videoCount}
+                        </div>
+                     </div>
+                </div>
+
                 <p className="text-[10px] text-blue-400 mt-2 text-center">{t("stats_note", language)}</p>
             </section>
         )}
@@ -255,7 +306,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="grid grid-cols-2 gap-2">
             <button 
               onClick={() => fileInputRef.current?.click()}
-              className="flex items-center justify-center gap-2 bg-white border border-slate-300 text-slate-700 p-2 rounded hover:bg-slate-100 text-sm font-medium transition"
+              className={`${btnBase} bg-white border border-slate-300 text-slate-700 hover:bg-slate-100`}
             >
               <Upload size={16} /> {t("import", language)}
             </button>
@@ -270,7 +321,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
              <button 
                onClick={onUndo}
                disabled={routes.length === 0}
-               className="flex items-center justify-center gap-2 bg-white border border-slate-300 disabled:opacity-50 text-slate-700 p-2 rounded hover:bg-slate-100 text-sm font-medium transition"
+               className={`${btnBase} bg-white border border-slate-300 disabled:opacity-50 text-slate-700 hover:bg-slate-100`}
             >
               <Undo2 size={16} /> {t("undo_last", language)}
             </button>
@@ -278,13 +329,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           
            <button 
                onClick={onClearRoutes}
-               className="w-full flex items-center justify-center gap-2 bg-red-50 border border-red-200 text-red-600 p-2 rounded hover:bg-red-100 text-sm font-medium transition"
+               className={`${btnBase} w-full bg-red-50 border border-red-200 text-red-600 hover:bg-red-100`}
             >
               <Trash2 size={16} /> {t("delete_all", language)}
             </button>
         </section>
 
-        {/* Route List with Locks */}
+        {/* Route List */}
         {routes.length > 0 && (
           <section className="space-y-2">
             <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">{t("active_routes", language)}</h2>
@@ -299,21 +350,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <div className="flex gap-2">
                      <button
                         onClick={() => onPromptRename(route.id, route.name)}
-                        className="text-slate-400 hover:text-blue-600"
+                        className="text-slate-400 hover:text-blue-600 active:scale-95 transition-transform"
                         title={t("rename_route", language)}
                      >
                         <Edit2 size={16} />
                      </button>
                     <button
                        onClick={() => onToggleLock(route.id)}
-                       className={`${route.locked ? 'text-amber-600' : 'text-slate-400 hover:text-amber-600'}`}
+                       className={`${route.locked ? 'text-amber-600' : 'text-slate-400 hover:text-amber-600'} active:scale-95 transition-transform`}
                        title={route.locked ? "Unlock Route" : "Lock Route"}
                     >
                         {route.locked ? <Lock size={16}/> : <Unlock size={16}/>}
                     </button>
                     <button 
                         onClick={() => onDeleteRoute(route.id)}
-                        className="text-red-500 hover:text-red-700"
+                        className="text-red-500 hover:text-red-700 active:scale-95 transition-transform"
                         title="Delete this route"
                     >
                         <XCircle size={16} />
@@ -338,35 +389,104 @@ export const Sidebar: React.FC<SidebarProps> = ({
              <div className="flex text-[10px] font-bold border border-blue-200 rounded overflow-hidden">
                 <button 
                     onClick={() => setSpeedUnit('kmh')}
-                    className={`px-2 py-1 ${speedUnit === 'kmh' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500'}`}
+                    className={`px-2 py-1 ${speedUnit === 'kmh' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
                 >KM/H</button>
                 <button 
                     onClick={() => setSpeedUnit('ms')}
-                    className={`px-2 py-1 ${speedUnit === 'ms' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500'}`}
+                    className={`px-2 py-1 ${speedUnit === 'ms' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
                 >M/S</button>
              </div>
+          </div>
+
+          {/* Mode Switcher */}
+          <div className="flex p-1 bg-slate-200 rounded text-xs font-bold shadow-inner">
+            <button 
+                className={`flex-1 py-1 rounded transition-all ${settings.flightMode === 'standard' ? 'bg-white shadow text-blue-700' : 'text-slate-500 hover:text-slate-700'}`}
+                onClick={() => setSettings(prev => ({...prev, flightMode: 'standard'}))}
+            >
+                {t("mode_standard", language)}
+            </button>
+            <button 
+                className={`flex-1 py-1 rounded transition-all ${settings.flightMode === 'mapping' ? 'bg-white shadow text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}
+                onClick={() => setSettings(prev => ({...prev, flightMode: 'mapping'}))}
+            >
+                {t("mode_mapping", language)}
+            </button>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">{t("altitude", language)}</label>
-              <input 
-                type="text" 
-                value={localAltitude}
-                onChange={(e) => handleRawChange(setLocalAltitude, 'altitude', e.target.value)}
-                className={inputClass}
+              <SidebarNumberInput 
+                  className={inputClass} 
+                  value={settings.altitude} 
+                  onChange={(v) => setSettings(p => ({ ...p, altitude: v }))} 
+                  min={1} max={500}
               />
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">{t("speed", language)} ({speedUnit === 'kmh' ? 'km/h' : 'm/s'})</label>
-              <input 
-                type="text" 
-                value={localSpeed}
-                onChange={(e) => handleSpeedRawChange(e.target.value)}
-                className={inputClass}
+              <SidebarNumberInput 
+                  className={inputClass} 
+                  value={speedUnit === 'kmh' ? settings.speedKmh : (settings.speedKmh / 3.6)} 
+                  onChange={(v) => {
+                      const newKmh = speedUnit === 'kmh' ? v : v * 3.6;
+                      setSettings(p => ({ ...p, speedKmh: newKmh }));
+                  }} 
+                  min={0.1} max={100}
               />
             </div>
           </div>
+
+          {settings.flightMode === 'mapping' && (
+             <div className="bg-orange-50 p-2 rounded border border-orange-200 space-y-2">
+                 <div>
+                    <label className="block text-[10px] font-bold text-orange-800 mb-1">{t("select_drone", language)}</label>
+                    <select 
+                        value={settings.selectedDroneModel}
+                        onChange={(e) => setSettings(prev => ({ ...prev, selectedDroneModel: e.target.value }))}
+                        className={inputClass}
+                    >
+                        {DRONE_PRESETS.map(p => (
+                            <option key={p.model} value={p.model}>{p.model}</option>
+                        ))}
+                    </select>
+                 </div>
+                 
+                 {/* GRID PATTERN SELECTION */}
+                 <div>
+                    <label className="block text-[10px] font-bold text-orange-800 mb-1">{t("grid_pattern", language)}</label>
+                    <select 
+                        value={settings.mappingPattern}
+                        onChange={(e) => setSettings(prev => ({...prev, mappingPattern: e.target.value as any}))}
+                        className={inputClass}
+                    >
+                        <option value="parallel">{t("pattern_parallel", language)}</option>
+                        <option value="crosshatch">{t("pattern_cross", language)}</option>
+                    </select>
+                 </div>
+
+                 <div className="grid grid-cols-2 gap-2">
+                     <div>
+                        <label className="block text-[10px] font-bold text-orange-800 mb-1">{t("overlap_v", language)}</label>
+                        <SidebarNumberInput className={inputClass} value={settings.mappingOverlap} onChange={v => setSettings(p => ({...p, mappingOverlap: v}))} min={0} max={99} />
+                     </div>
+                     <div>
+                        <label className="block text-[10px] font-bold text-orange-800 mb-1">{t("overlap_h", language)}</label>
+                        <SidebarNumberInput className={inputClass} value={settings.mappingOverlapH} onChange={v => setSettings(p => ({...p, mappingOverlapH: v}))} min={0} max={99} />
+                     </div>
+                     <div className="col-span-2">
+                        <label className="block text-[10px] font-bold text-orange-800 mb-1">{t("calc_interval", language)}</label>
+                        <input 
+                            type="text" 
+                            value={settings.photoTimeInterval > 0 ? settings.photoTimeInterval : 'N/A'}
+                            disabled
+                            className="w-full bg-slate-200 text-slate-600 border border-slate-300 rounded text-sm p-2 font-mono"
+                        />
+                     </div>
+                 </div>
+             </div>
+          )}
           
           <div>
                <label className="block text-xs font-bold text-slate-700 mb-1">{t("altitude_mode", language)}</label>
@@ -396,33 +516,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {settings.headingMode === 'manual' && (
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">{t("manual_heading", language)}</label>
-              <input 
-                type="text"
-                value={localHeading}
-                onChange={(e) => handleRawChange(setLocalHeading, 'headingManual', e.target.value)}
-                className={inputClass}
-              />
+              <SidebarNumberInput className={inputClass} value={settings.headingManual} onChange={v => setSettings(p => ({...p, headingManual: v}))} min={0} max={360}/>
             </div>
           )}
 
            <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">{t("gimbal_pitch", language)}</label>
-              <input 
-                type="text"
-                value={localGimbal}
-                onChange={(e) => handleRawChange(setLocalGimbal, 'gimbalPitch', e.target.value)}
-                className={inputClass}
-              />
+              <SidebarNumberInput className={inputClass} value={settings.gimbalPitch} onChange={v => setSettings(p => ({...p, gimbalPitch: v}))} min={-90} max={30} />
             </div>
              <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">{t("curve_size", language)}</label>
-              <input 
-                type="text"
-                value={localCurve}
-                onChange={(e) => handleRawChange(setLocalCurve, 'curveSize', e.target.value)}
-                className={inputClass}
-              />
+              <SidebarNumberInput className={inputClass} value={settings.curveSize} onChange={v => setSettings(p => ({...p, curveSize: v}))} min={0} max={100} />
             </div>
           </div>
 
@@ -436,6 +541,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                >
                  <option value="-1">{t("act_none", language)}</option>
                  <option value="0">{t("act_stay", language)}</option>
+                 <option value="1">{t("act_photo", language)}</option>
                  <option value="2">{t("act_start_rec", language)}</option>
                  <option value="3">{t("act_stop_rec", language)}</option>
                  <option value="5">{t("act_rotate", language)}</option>
@@ -459,7 +565,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           <button 
             onClick={onApplySettings}
-            className="w-full bg-slate-800 hover:bg-slate-900 text-white font-medium py-2 px-4 rounded transition shadow-sm border border-slate-900 active:transform active:scale-95"
+            className={`${btnBase} w-full bg-slate-800 hover:bg-slate-900 text-white border-slate-900 shadow-md py-3`}
           >
             {t("apply_settings", language)}
           </button>
@@ -473,21 +579,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
            <button 
               onClick={onExportLitchi}
               disabled={routes.length === 0}
-              className="w-full flex items-center justify-center gap-2 bg-blue-600 disabled:bg-slate-300 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded transition"
+              className={`${btnBase} w-full bg-blue-600 disabled:bg-slate-300 hover:bg-blue-700 text-white`}
             >
               <Download size={18} /> Litchi CSV
             </button>
              <button 
               onClick={onExportKML}
                disabled={routes.length === 0}
-              className="w-full flex items-center justify-center gap-2 bg-slate-600 disabled:bg-slate-300 hover:bg-slate-700 text-white font-medium py-2 px-4 rounded transition"
+              className={`${btnBase} w-full bg-slate-600 disabled:bg-slate-300 hover:bg-slate-700 text-white`}
             >
               <Download size={18} /> Standard KML
             </button>
              <button 
               onClick={onExportWPML}
                disabled={routes.length === 0}
-              className="w-full flex items-center justify-center gap-2 bg-orange-600 disabled:bg-slate-300 hover:bg-orange-700 text-white font-medium py-2 px-4 rounded transition shadow-md"
+              className={`${btnBase} w-full bg-orange-600 disabled:bg-slate-300 hover:bg-orange-700 text-white shadow-md`}
             >
               <Plane size={18} /> DJI Fly (KMZ/WPML)
             </button>

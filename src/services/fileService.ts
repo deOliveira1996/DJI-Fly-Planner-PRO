@@ -1,3 +1,4 @@
+
 import Papa from 'papaparse';
 import JSZip from 'jszip';
 import FileSaver from 'file-saver';
@@ -5,10 +6,9 @@ import { Route, Waypoint, FlightSettings } from '../types';
 import * as turf from '@turf/turf';
 
 // Handle FileSaver import for both ESM and UMD environments
-// The saveAs function is sometimes the default export itself, or a property of the default export
 const saveAs = (FileSaver as any).saveAs || FileSaver;
 
-// Helper for unique ID - Exported for use in App.tsx
+// Helper for unique ID
 export const generateId = () => {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
         return crypto.randomUUID();
@@ -25,6 +25,15 @@ const LITCHI_HEADER = [
   "photo_timeinterval", "photo_distinterval"
 ];
 
+const findColumn = (row: any, candidates: string[]) => {
+    const keys = Object.keys(row);
+    for (const cand of candidates) {
+        const found = keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === cand.toLowerCase().replace(/[^a-z0-9]/g, ''));
+        if (found) return row[found];
+    }
+    return null;
+};
+
 export const parseCSV = (file: File): Promise<Waypoint[]> => {
   return new Promise((resolve, reject) => {
     Papa.parse(file, {
@@ -33,32 +42,38 @@ export const parseCSV = (file: File): Promise<Waypoint[]> => {
       complete: (results: any) => {
         const waypoints: Waypoint[] = [];
         results.data.forEach((row: any, index: number) => {
-          // Flexible parsing for latitude/longitude keys
-          const latKey = Object.keys(row).find(k => k.toLowerCase().includes('latitude'));
-          const lonKey = Object.keys(row).find(k => k.toLowerCase().includes('longitude'));
+          // Robust Column Matching
+          const lat = findColumn(row, ['latitude', 'lat']);
+          const lon = findColumn(row, ['longitude', 'lon', 'lng']);
+          const alt = findColumn(row, ['altitude(m)', 'altitude', 'alt']);
+          const gimbal = findColumn(row, ['gimbalpitchangle', 'gimbalpitch', 'gimbal']);
+          const speed = findColumn(row, ['speed(m/s)', 'speed']);
+          const heading = findColumn(row, ['heading(deg)', 'heading']);
+          const action1 = findColumn(row, ['actiontype1', 'action1']);
+          const interval = findColumn(row, ['photo_timeinterval', 'interval']);
 
-          if (latKey && lonKey && row[latKey] && row[lonKey]) {
+          if (lat && lon) {
             waypoints.push({
               id: index + 1,
-              latitude: parseFloat(row[latKey]),
-              longitude: parseFloat(row[lonKey]),
-              altitude: 30, // Default, will be overwritten by settings
-              heading: 0,
+              latitude: parseFloat(lat),
+              longitude: parseFloat(lon),
+              altitude: alt ? parseFloat(alt) : 30,
+              heading: heading ? parseFloat(heading) : 0,
               curveSize: 0,
               rotationDir: 0,
               gimbalMode: 0,
-              gimbalPitch: 0,
-              actionType1: -1,
+              gimbalPitch: gimbal ? parseFloat(gimbal) : 0,
+              actionType1: action1 ? parseInt(action1) : -1,
               actionParam1: 0,
               actionType2: -1,
               actionParam2: 0,
               altitudeMode: 1,
-              speed: 0,
+              speed: speed ? parseFloat(speed) : 0,
               poiLat: 0,
               poiLon: 0,
               poiAlt: 0,
               poiAltMode: 0,
-              photoTimeInterval: -1,
+              photoTimeInterval: interval ? parseFloat(interval) : -1,
               photoDistInterval: -1
             });
           }
@@ -71,119 +86,122 @@ export const parseCSV = (file: File): Promise<Waypoint[]> => {
 };
 
 export const parseKML = async (file: File): Promise<Route[]> => {
-  const text = await file.text();
-  const parser = new DOMParser();
-  const kml = parser.parseFromString(text, 'text/xml');
-  const routes: Route[] = [];
+  try {
+      const text = await file.text();
+      const parser = new DOMParser();
+      const kml = parser.parseFromString(text, 'text/xml');
+      const routes: Route[] = [];
 
-  // Very basic KML parsing for LineStrings and Points
-  const placemarks = kml.getElementsByTagName('Placemark');
-  
-  // Group points into a single route if they are just points
-  const pointWaypoints: Waypoint[] = [];
+      const placemarks = kml.getElementsByTagName('Placemark');
+      const pointWaypoints: Waypoint[] = [];
 
-  for (let i = 0; i < placemarks.length; i++) {
-    const pm = placemarks[i];
-    const name = pm.getElementsByTagName('name')[0]?.textContent || `Route ${i}`;
-    
-    // Check for Point
-    const point = pm.getElementsByTagName('Point')[0];
-    if (point) {
-      const coords = point.getElementsByTagName('coordinates')[0]?.textContent?.trim();
-      if (coords) {
-        const [lon, lat] = coords.split(',').map(Number);
-        pointWaypoints.push({
-          id: pointWaypoints.length + 1,
-          latitude: lat,
-          longitude: lon,
-          altitude: 30,
-          heading: 0,
-          curveSize: 0,
-          rotationDir: 0,
-          gimbalMode: 0,
-          gimbalPitch: 0,
-          actionType1: -1,
-          actionParam1: 0,
-          actionType2: -1,
-          actionParam2: 0,
-          altitudeMode: 1,
-          speed: 0,
-          poiLat: 0,
-          poiLon: 0,
-          poiAlt: 0,
-          poiAltMode: 0,
-          photoTimeInterval: -1,
-          photoDistInterval: -1
-        });
-      }
-    }
+      for (let i = 0; i < placemarks.length; i++) {
+        const pm = placemarks[i];
+        const name = pm.getElementsByTagName('name')[0]?.textContent || `Route ${i}`;
+        
+        // Check for Point
+        const point = pm.getElementsByTagName('Point')[0];
+        if (point) {
+          const coords = point.getElementsByTagName('coordinates')[0]?.textContent?.trim();
+          if (coords) {
+            const [lon, lat] = coords.split(',').map(Number);
+            if(!isNaN(lon) && !isNaN(lat)) {
+                pointWaypoints.push({
+                  id: pointWaypoints.length + 1,
+                  latitude: lat,
+                  longitude: lon,
+                  altitude: 30,
+                  heading: 0,
+                  curveSize: 0,
+                  rotationDir: 0,
+                  gimbalMode: 0,
+                  gimbalPitch: 0,
+                  actionType1: -1,
+                  actionParam1: 0,
+                  actionType2: -1,
+                  actionParam2: 0,
+                  altitudeMode: 1,
+                  speed: 0,
+                  poiLat: 0,
+                  poiLon: 0,
+                  poiAlt: 0,
+                  poiAltMode: 0,
+                  photoTimeInterval: -1,
+                  photoDistInterval: -1
+                });
+            }
+          }
+        }
 
-    // Check for LineString
-    const lineString = pm.getElementsByTagName('LineString')[0];
-    if (lineString) {
-      const coordStr = lineString.getElementsByTagName('coordinates')[0]?.textContent?.trim();
-      if (coordStr) {
-        const parts = coordStr.split(/\s+/);
-        const lineWps: Waypoint[] = parts.map((part, idx) => {
-          const [lon, lat] = part.split(',').map(Number);
-          return {
-             id: idx + 1,
-             latitude: lat,
-             longitude: lon,
-             altitude: 30,
-             heading: 0,
-             curveSize: 0,
-             rotationDir: 0,
-             gimbalMode: 0,
-             gimbalPitch: 0,
-             actionType1: -1,
-             actionParam1: 0,
-             actionType2: -1,
-             actionParam2: 0,
-             altitudeMode: 1,
-             speed: 0,
-             poiLat: 0,
-             poiLon: 0,
-             poiAlt: 0,
-             poiAltMode: 0,
-             photoTimeInterval: -1,
-             photoDistInterval: -1
-          };
-        }).filter(w => !isNaN(w.latitude));
+        // Check for LineString
+        const lineString = pm.getElementsByTagName('LineString')[0];
+        if (lineString) {
+          const coordStr = lineString.getElementsByTagName('coordinates')[0]?.textContent?.trim();
+          if (coordStr) {
+            const parts = coordStr.split(/\s+/);
+            const lineWps: Waypoint[] = parts.map((part, idx) => {
+              const [lon, lat] = part.split(',').map(Number);
+              return {
+                 id: idx + 1,
+                 latitude: lat,
+                 longitude: lon,
+                 altitude: 30,
+                 heading: 0,
+                 curveSize: 0,
+                 rotationDir: 0,
+                 gimbalMode: 0,
+                 gimbalPitch: 0,
+                 actionType1: -1,
+                 actionParam1: 0,
+                 actionType2: -1,
+                 actionParam2: 0,
+                 altitudeMode: 1,
+                 speed: 0,
+                 poiLat: 0,
+                 poiLon: 0,
+                 poiAlt: 0,
+                 poiAltMode: 0,
+                 photoTimeInterval: -1,
+                 photoDistInterval: -1
+              };
+            }).filter(w => !isNaN(w.latitude) && !isNaN(w.longitude));
 
-        if(lineWps.length > 0) {
-            routes.push({
-                id: generateId(),
-                name: name,
-                waypoints: lineWps,
-                color: '#3388ff',
-                locked: false,
-                homePoint: { lat: lineWps[0].latitude, lng: lineWps[0].longitude }
-            });
+            if(lineWps.length > 0) {
+                routes.push({
+                    id: generateId(),
+                    name: name,
+                    waypoints: lineWps,
+                    color: '#3388ff',
+                    locked: false,
+                    homePoint: { lat: lineWps[0].latitude, lng: lineWps[0].longitude }
+                });
+            }
+          }
         }
       }
-    }
-  }
 
-  if (pointWaypoints.length > 0) {
-    routes.push({
-      id: generateId(),
-      name: file.name.replace('.kml', ''),
-      waypoints: pointWaypoints,
-      color: '#ff3388',
-      locked: false,
-      homePoint: { lat: pointWaypoints[0].latitude, lng: pointWaypoints[0].longitude }
-    });
-  }
+      if (pointWaypoints.length > 0) {
+        routes.push({
+          id: generateId(),
+          name: file.name.replace('.kml', ''),
+          waypoints: pointWaypoints,
+          color: '#ff3388',
+          locked: false,
+          homePoint: { lat: pointWaypoints[0].latitude, lng: pointWaypoints[0].longitude }
+        });
+      }
 
-  return routes;
+      return routes;
+  } catch (e) {
+      console.error("KML Parse Error", e);
+      return [];
+  }
 };
 
 export const exportLitchiZip = (routes: Route[]) => {
   const zip = new JSZip();
 
   routes.forEach(route => {
-    // Convert waypoints to CSV row array
     const csvData = route.waypoints.map(wp => ({
       "latitude": wp.latitude,
       "longitude": wp.longitude,
@@ -221,7 +239,6 @@ export const exportLitchiZip = (routes: Route[]) => {
 };
 
 
-// DJI Fly KML (Standard KML 2.2 that works in most viewers and DJI Import)
 export const exportDJIKMLZip = (routes: Route[]) => {
   const zip = new JSZip();
 
@@ -245,7 +262,6 @@ export const exportDJIKMLZip = (routes: Route[]) => {
         <coordinates>
 `;
 
-    // Coordinates loop
     route.waypoints.forEach(wp => {
         kmlContent += `          ${wp.longitude},${wp.latitude},${wp.altitude}\n`;
     });
@@ -254,7 +270,6 @@ export const exportDJIKMLZip = (routes: Route[]) => {
       </LineString>
     </Placemark>
 `;
-    // Add Individual Waypoints as placemarks
     route.waypoints.forEach((wp, idx) => {
         kmlContent += `    <Placemark>
       <name>${idx + 1}</name>
@@ -275,13 +290,6 @@ export const exportDJIKMLZip = (routes: Route[]) => {
   });
 };
 
-// --- DJI WPML / KMZ Export Logic ---
-
-/**
- * Maps Litchi Finish Action to DJI WPML Finish Action
- * Litchi: 0=None, 1=RTH, 2=Land, 3=Back to 1st, 4=Reverse
- * DJI: goHome, autoLand, goFirstWaypoint, noAction, gotoStart
- */
 const mapFinishAction = (action: number): string => {
   switch(action) {
     case 1: return 'goHome';
@@ -292,11 +300,8 @@ const mapFinishAction = (action: number): string => {
 };
 
 const generateTemplateKml = (routeName: string, waypoints: Waypoint[]) => {
-  // Safe defaults based on first waypoint or global settings logic from app
   const firstWp = waypoints[0];
-  // Convert 1 (RTH) etc to DJI string. Accessing a property on WP if it exists, otherwise defaulting.
-  // Since action info is not fully on Route object but embedded in WPs, we take from first WP or default to goHome
-  const finishAction = mapFinishAction(1); // Defaulting to RTH for safety or need to pass Settings object
+  const finishAction = mapFinishAction(1);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2" xmlns:wpml="http://www.dji.com/wpmz/1.0.2">
@@ -330,23 +335,31 @@ const generateWaylinesWpml = (routeName: string, waypoints: Waypoint[]) => {
   let placemarks = '';
   
   waypoints.forEach((wp, index) => {
-    // Heading Mode Map
-    // Litchi 0 (Auto) -> followWayline
-    // Litchi 1 (Manual) -> fixed
-    // Litchi 2 (Bearing) -> smoothTransition (best approximation for pre-calc bearing)
     let headingMode = 'followWayline';
     let headingParam = 0;
 
-    // Use a heuristic: if all headings are 0, it's auto. If they vary, it's likely bearing/manual.
     if (wp.heading !== 0) {
-        headingMode = 'smoothTransition'; // Using smooth allows the drone to interp to the heading
+        headingMode = 'smoothTransition'; 
         headingParam = wp.heading;
     }
 
-    // Actions
-    // Simple implementation: If Start Recording (2) is found
     let actionGroup = '';
-    if (wp.actionType1 === 2) { // Start Record
+    // Generate Actions for WPML
+    if (wp.actionType1 === 2 || wp.actionType1 === 3 || wp.actionType1 === 1) { 
+        let func = '';
+        let param = '';
+        
+        if (wp.actionType1 === 2) { // Start Rec
+            func = 'startRecord';
+            param = '<wpml:fileSuffix>video</wpml:fileSuffix><wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>';
+        } else if (wp.actionType1 === 3) { // Stop Rec
+            func = 'stopRecord';
+            param = '<wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>';
+        } else if (wp.actionType1 === 1) { // Take Photo
+            func = 'takePhoto';
+            param = '<wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>';
+        }
+
         actionGroup = `
         <wpml:actionGroup>
             <wpml:actionGroupId>${index}</wpml:actionGroupId>
@@ -358,33 +371,13 @@ const generateWaylinesWpml = (routeName: string, waypoints: Waypoint[]) => {
             </wpml:actionTrigger>
             <wpml:action>
                 <wpml:actionId>0</wpml:actionId>
-                <wpml:actionActuatorFunc>startRecord</wpml:actionActuatorFunc>
+                <wpml:actionActuatorFunc>${func}</wpml:actionActuatorFunc>
                 <wpml:actionActuatorFuncParam>
-                   <wpml:fileSuffix>video</wpml:fileSuffix>
-                   <wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>
-                </wpml:actionActuatorFuncParam>
-            </wpml:action>
-        </wpml:actionGroup>`;
-    } else if (wp.actionType1 === 3) { // Stop Record
-         actionGroup = `
-        <wpml:actionGroup>
-            <wpml:actionGroupId>${index}</wpml:actionGroupId>
-            <wpml:actionGroupStartIndex>${index}</wpml:actionGroupStartIndex>
-            <wpml:actionGroupEndIndex>${index}</wpml:actionGroupEndIndex>
-            <wpml:actionGroupMode>sequence</wpml:actionGroupMode>
-            <wpml:actionTrigger>
-                <wpml:actionTriggerType>reachPoint</wpml:actionTriggerType>
-            </wpml:actionTrigger>
-            <wpml:action>
-                <wpml:actionId>0</wpml:actionId>
-                <wpml:actionActuatorFunc>stopRecord</wpml:actionActuatorFunc>
-                <wpml:actionActuatorFuncParam>
-                   <wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>
+                   ${param}
                 </wpml:actionActuatorFuncParam>
             </wpml:action>
         </wpml:actionGroup>`;
     }
-
 
     placemarks += `
       <Placemark>
@@ -433,12 +426,11 @@ const generateWaylinesWpml = (routeName: string, waypoints: Waypoint[]) => {
 </kml>`;
 };
 
-export const exportDJIWPML = (routes: Route[]) => {
-    // If multiple routes, we zip them individually into a parent zip
-    // DJI Fly expects ONE kmz per mission.
+export const exportDJIWPML = async (routes: Route[]) => {
     const masterZip = new JSZip();
-
-    routes.forEach((route, i) => {
+    
+    // Process all routes in parallel promises
+    const promises = routes.map(async (route, i) => {
         const kmzZip = new JSZip();
         const wpmzFolder = kmzZip.folder("wpmz");
         
@@ -449,17 +441,13 @@ export const exportDJIWPML = (routes: Route[]) => {
             wpmzFolder.file("template.kml", template);
             wpmzFolder.file("waylines.wpml", waylines);
         }
-
-        // Generate the KMZ blob
-        kmzZip.generateAsync({type:"blob"}).then(blob => {
-             masterZip.file(`${route.name}_DJI_Fly.kmz`, blob);
-             
-             // If this is the last one, trigger save
-             if (i === routes.length - 1) {
-                 masterZip.generateAsync({type:"blob"}).then(content => {
-                     saveAs(content, "DJI_WPML_Missions.zip");
-                 })
-             }
-        });
+        
+        const blob = await kmzZip.generateAsync({type:"blob"});
+        masterZip.file(`${route.name}_DJI_Fly.kmz`, blob);
     });
+
+    await Promise.all(promises);
+
+    const content = await masterZip.generateAsync({type:"blob"});
+    saveAs(content, "DJI_WPML_Missions.zip");
 };

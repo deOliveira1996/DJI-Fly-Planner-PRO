@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { Route, Waypoint } from '../types';
+
+
+import React, { useState, useEffect } from 'react';
+import { Route, Waypoint, SpeedUnit } from '../types';
 import { ArrowUp, ArrowDown, Trash2, Edit, ChevronDown, ChevronUp, X, Edit2 } from 'lucide-react';
-import { SpeedUnit } from '../App';
 import { t, Language } from '../translations';
 
 interface RouteManagerProps {
@@ -15,10 +16,62 @@ interface RouteManagerProps {
     language: Language;
 }
 
+// Memoized Input Component to prevent re-rendering entire table on typing
+const TableInput = React.memo<{
+    value: number,
+    onChange: (val: number) => void,
+    min?: number,
+    max?: number
+}>(({ value, onChange, min, max }) => {
+    const [localVal, setLocalVal] = useState(String(value));
+
+    // When external value changes (e.g. from Batch Edit), update local
+    useEffect(() => {
+        // Only update if not currently editing (to avoid cursor jumps)
+        if (Number(localVal) !== value && localVal !== '' && localVal !== '-' && localVal !== '.') {
+            setLocalVal(String(value));
+        }
+    }, [value]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setLocalVal(e.target.value);
+    };
+    
+    const handleBlur = () => {
+         let num = parseFloat(localVal);
+         if (!isNaN(num)) {
+             // Validation
+             if (min !== undefined && num < min) num = min;
+             if (max !== undefined && num > max) num = max;
+
+             onChange(num);
+             setLocalVal(num.toFixed(1).replace(/\.0$/, '')); 
+         } else {
+             setLocalVal(String(value)); // Revert
+         }
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if(e.key === 'Enter') {
+            handleBlur();
+            (e.target as HTMLInputElement).blur();
+        }
+    }
+
+    return <input 
+        type="text" 
+        className={`bg-white text-gray-900 border border-slate-300 rounded p-1 w-full focus:ring-1 focus:ring-blue-500 outline-none ${Number(localVal) < (min ?? -Infinity) || Number(localVal) > (max ?? Infinity) ? 'border-red-500' : ''}`}
+        value={localVal} 
+        onChange={handleChange} 
+        onBlur={handleBlur}
+        onKeyDown={handleKeyDown}
+    />;
+});
+
 export const RouteManager: React.FC<RouteManagerProps> = ({ 
     routes, 
     onUpdateWaypoint, 
-    onDeleteWaypoint,
+    onDeleteWaypoint, 
     onReorderWaypoint,
     onRenameRoute,
     onPromptRename,
@@ -31,36 +84,6 @@ export const RouteManager: React.FC<RouteManagerProps> = ({
     // Shared input style - High Contrast - Bright White
     const inputClass = "bg-white text-gray-900 border border-slate-300 rounded p-1 w-full focus:ring-1 focus:ring-blue-500 outline-none";
 
-    // Helper for Raw Input in Table
-    const TableInput: React.FC<{
-        value: number,
-        onChange: (val: number) => void
-    }> = ({ value, onChange }) => {
-        const [localVal, setLocalVal] = useState(String(value));
-
-        const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-            const raw = e.target.value;
-            setLocalVal(raw);
-            if (raw !== '' && raw !== '-') {
-                onChange(Number(raw));
-            }
-        };
-
-        React.useEffect(() => {
-            if (Number(localVal) !== value && localVal !== '' && localVal !== '-') {
-                setLocalVal(String(value));
-            } else if (localVal === '' || localVal === '-') {
-                // Keep local state
-            } else {
-                 setLocalVal(String(value));
-            }
-        }, [value]);
-
-        return <input type="text" className={inputClass} value={localVal} onChange={handleChange} />;
-    };
-
-
-    // Speed Conversion Helper
     const toDisplaySpeed = (ms: number) => {
         if (speedUnit === 'kmh') return parseFloat((ms * 3.6).toFixed(2));
         return ms;
@@ -113,6 +136,7 @@ export const RouteManager: React.FC<RouteManagerProps> = ({
                             <select className={inputClass} value={wp.actionType1} onChange={e => handleChange('actionType1', Number(e.target.value))}>
                                 <option value="-1">{t("act_none", language)}</option>
                                 <option value="0">{t("act_stay", language)}</option>
+                                <option value="1">{t("act_photo", language)}</option>
                                 <option value="2">{t("act_start_rec", language)}</option>
                                 <option value="3">{t("act_stop_rec", language)}</option>
                                 <option value="5">{t("act_rotate", language)}</option>
@@ -203,18 +227,21 @@ export const RouteManager: React.FC<RouteManagerProps> = ({
                                                 <TableInput 
                                                     value={wp.altitude} 
                                                     onChange={(val) => onUpdateWaypoint(route.id, wp.id, 'altitude', val)} 
+                                                    min={1} max={500}
                                                 />
                                             </td>
                                             <td className="px-4 py-2">
                                                 <TableInput
                                                     value={toDisplaySpeed(wp.speed)} 
                                                     onChange={(val) => onUpdateWaypoint(route.id, wp.id, 'speed', fromDisplaySpeed(val))} 
+                                                    min={0.1} max={100}
                                                 />
                                             </td>
                                             <td className="px-4 py-2">
                                                  <TableInput 
                                                     value={wp.gimbalPitch} 
                                                     onChange={(val) => onUpdateWaypoint(route.id, wp.id, 'gimbalPitch', val)} 
+                                                    min={-90} max={30}
                                                 />
                                             </td>
                                             <td className="px-4 py-2">
@@ -226,6 +253,7 @@ export const RouteManager: React.FC<RouteManagerProps> = ({
                                                 >
                                                     <option value="-1">{t("act_none", language)}</option>
                                                     <option value="0">{t("act_stay", language)}</option>
+                                                    <option value="1">{t("act_photo", language)}</option>
                                                     <option value="2">{t("act_start_rec", language)}</option>
                                                     <option value="3">{t("act_stop_rec", language)}</option>
                                                     <option value="5">{t("act_rotate", language)}</option>
