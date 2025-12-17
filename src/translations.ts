@@ -51,6 +51,9 @@ export const t = (key: string, lang: Language): string => {
     "overlap_v": { en: "Forward Overlap (%)", pt: "Sobreposição Frontal (%)" },
     "overlap_h": { en: "Side Overlap (%)", pt: "Sobreposição Lateral (%)" },
     "calc_interval": { en: "Calc. Interval (s)", pt: "Intervalo Calc. (s)" },
+    "grid_pattern": { en: "Grid Pattern", pt: "Padrão de Grade" },
+    "pattern_parallel": { en: "Parallel (Standard)", pt: "Paralelo (Padrão)" },
+    "pattern_cross": { en: "Cross Hatch (Double)", pt: "Grade Cruzada (Duplo)" },
 
     "altitude": { en: "Altitude (m)", pt: "Altitude (m)" },
     "speed": { en: "Speed", pt: "Velocidade" },
@@ -106,11 +109,16 @@ export const t = (key: string, lang: Language): string => {
     "advanced": { en: "Advanced (Litchi)", pt: "Avançado (Litchi)" },
     "close": { en: "Close", pt: "Fechar" },
 
-    // Calculator
-    "calc_title": { en: "Sweep Area Calculator", pt: "Calculadora de Área de Varredura" },
-    "drone_params": { en: "1. Drone Parameters", pt: "1. Parâmetros do Drone" },
-    "calc_mode": { en: "2. Calculation Mode", pt: "2. Modo de Cálculo" },
-    "optional_dist": { en: "3. Optional Distances", pt: "3. Distâncias Opcionais" },
+    // Calculator & Photogrammetry
+    "calc_title": { en: "Mapping & Photogrammetry Calculator", pt: "Calculadora de Mapeamento e Fotogrametria" },
+    "drone_params": { en: "1. Drone & Camera", pt: "1. Drone e Câmera" },
+    "calc_mode": { en: "2. Mode & Sweep", pt: "2. Modo e Varredura" },
+    "optional_dist": { en: "3. Distances", pt: "3. Distâncias" },
+    
+    // Split headers
+    "photo_quality": { en: "Photogrammetry Quality", pt: "Qualidade Fotogramétrica" },
+    "mapping_guide": { en: "Mapping Guidelines", pt: "Diretrizes de Mapeamento" },
+    
     "fov_h": { en: "FOV H (°)", pt: "FOV H (°)" },
     "fov_v": { en: "FOV V (°)", pt: "FOV V (°)" },
     "load_preset": { en: "LOAD PRESET:", pt: "CARREGAR PRESET:" },
@@ -120,19 +128,26 @@ export const t = (key: string, lang: Language): string => {
     "gimbal_angle": { en: "Gimbal Angle (°)", pt: "Ângulo Gimbal (°)" },
     "max_base": { en: "Max Base B (m)", pt: "Base Maior B (m)" },
     "frontal_dist": { en: "Frontal Dist (m)", pt: "Dist. Frontal (m)" },
-    "total_flight_dist": { en: "Total Flight Dist (m)", pt: "Dist. Total de Voo (m)" },
     "calc_results": { en: "CALCULATE RESULTS", pt: "CALCULAR RESULTADOS" },
     "visual_result": { en: "Visual Result", pt: "Resultado Visual" },
-    "top_down": { en: "Top Down View (Auto-Scaled)", pt: "Vista Superior (Auto-Escala)" },
-    "time_frontal": { en: "Time (Frontal)", pt: "Tempo (Frontal)" },
-    "dist_near_far": { en: "Dist (Near/Far)", pt: "Dist (Perto/Longe)" },
-    "total_time": { en: "Total Flight Time", pt: "Tempo Total de Voo" },
+    "est_scan_time": { en: "Est. Scan Time", pt: "Tempo Est. de Varredura" },
     "save_image": { en: "Save Image", pt: "Salvar Imagem" },
+
+    // New GSD/Blur Terms
+    "shutter_speed": { en: "Shutter Speed", pt: "Velocidade do Obturador" },
+    "motion_blur": { en: "Motion Blur", pt: "Desfoque de Movimento" },
+    "gsd": { en: "GSD (Resolution)", pt: "GSD (Resolução)" },
+    "photo_interval_dist": { en: "Shot Interval (Dist)", pt: "Intervalo Disparo (Dist)" },
+    "photo_interval_time": { en: "Shot Interval (Time)", pt: "Intervalo Disparo (Tempo)" },
+    "lane_spacing": { en: "Lane Spacing", pt: "Espaçamento entre Linhas" },
+    "sensor_dim": { en: "Sensor Size", pt: "Tam. do Sensor" },
+    "focal_len": { en: "Real Focal Len.", pt: "Dist. Focal Real" },
 
     // Tabs
     "tab_map": { en: "Map Planner", pt: "Mapa Planejador" },
     "tab_manager": { en: "Route Manager", pt: "Gerenciador Rotas" },
     "tab_calc": { en: "Calculator", pt: "Calculadora" },
+    "tab_instr": { en: "Instructions", pt: "Instruções" },
     "screenshot": { en: "Screenshot", pt: "Captura de Tela" },
 
     // Instructions
@@ -140,7 +155,32 @@ export const t = (key: string, lang: Language): string => {
     "guide_draw": { en: "Draw: Use polygon/line tool.", pt: "Desenhar: Use ferramenta polígono/linha." },
     "guide_takeoff": { en: "Takeoff: Drag Green 'H' per route.", pt: "Decolagem: Arraste o 'H' Verde por rota." },
     "guide_edit": { en: "Edit: Drag arrows.", pt: "Editar: Arraste as setas." },
-    "guide_lock": { en: "Lock: Use padlock.", pt: "Travar: Use o cadeado." }
+    "guide_lock": { en: "Lock: Use padlock.", pt: "Travar: Use o cadeado." },
+    
+    // Instructions Tab Content
+    "instr_intro_title": { en: "Welcome to DJI Fly Planner PRO", pt: "Bem-vindo ao DJI Fly Planner PRO" },
+    "instr_intro_text": { en: "A professional tool for planning autonomous drone missions (Litchi & DJI Fly).", pt: "Uma ferramenta profissional para planejar missões autônomas de drones (Litchi & DJI Fly)." },
+    
+    "instr_map_title": { en: "How to use the Map", pt: "Como usar o Mapa" },
+    "instr_map_desc": { en: "Create routes by drawing on the map. Use the 'Settings' sidebar to configure altitude and speed for all points.", pt: "Crie rotas desenhando no mapa. Use a barra lateral 'Configurações' para definir altitude e velocidade." },
+    
+    "instr_calc_title": { en: "Understanding the Calculator", pt: "Entendendo a Calculadora" },
+    "instr_calc_desc": { en: "The calculator helps you ensure image quality (GSD) and safety (Blur) before flying.", pt: "A calculadora ajuda a garantir a qualidade da imagem (GSD) e a segurança (Desfoque) antes de voar." },
+    
+    "instr_calc_gsd_explain": { en: "GSD (Ground Sampling Distance): Represents pixel size on the ground. Lower is better quality (e.g., 2 cm/px is better than 5 cm/px).", pt: "GSD (Ground Sampling Distance): Representa o tamanho do pixel no chão. Menor é melhor qualidade (ex: 2 cm/px é melhor que 5 cm/px)." },
+    
+    "instr_calc_blur_explain": { en: "Motion Blur: How much the image smears due to speed. It MUST be lower than your GSD for sharp photos. If it's red, fly slower or increase shutter speed.", pt: "Desfoque de Movimento: Quanto a imagem borra devido à velocidade. DEVE ser menor que o GSD para fotos nítidas. Se estiver vermelho, voe mais devagar ou aumente a velocidade do obturador." },
+    
+    "instr_import_title": { en: "DJI Native Import", pt: "Importação Nativa DJI" },
+    
+    // New Import Guide
+    "dji_import_guide": { en: "Native DJI Fly Import Guide", pt: "Guia de Importação Nativa DJI Fly" },
+    "dji_compat_drones": { en: "Compatible Drones: Mini 4 Pro, Air 3, Mavic 3 (Pro/Classic/Enterprise)", pt: "Drones Compatíveis: Mini 4 Pro, Air 3, Mavic 3 (Pro/Classic/Enterprise)" },
+    "dji_step_1": { en: "Export your route using the Orange 'DJI Fly (KMZ)' button.", pt: "Exporte sua rota usando o botão Laranja 'DJI Fly (KMZ)'." },
+    "dji_step_2": { en: "Connect your DJI RC 2 / RC Pro to your computer via USB-C.", pt: "Conecte seu DJI RC 2 / RC Pro ao computador via USB-C." },
+    "dji_step_3": { en: "Navigate to this specific folder path:", pt: "Navegue para esta pasta específica:" },
+    "dji_step_4": { en: "Copy the .kmz file into the 'waypoint' folder.", pt: "Copie o arquivo .kmz para a pasta 'waypoint'." },
+    "dji_step_5": { en: "Open DJI Fly, go to Waypoints, and tap the Folder icon to load.", pt: "Abra o DJI Fly, vá para Waypoints e toque no ícone de Pasta para carregar." }
   };
 
   return dict[key]?.[lang] || key;
