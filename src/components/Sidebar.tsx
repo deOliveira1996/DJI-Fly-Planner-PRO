@@ -1,9 +1,8 @@
 
 
 import React, { useRef, useState, useEffect } from 'react';
-import { FlightSettings, Route, RouteStats, DRONE_PRESETS } from '../types';
+import { FlightSettings, Route, RouteStats, DRONE_PRESETS, SpeedUnit } from '../types';
 import { Upload, Download, Settings, Trash2, Undo2, XCircle, Plane, FolderOpen, Save, Trash, Lock, Unlock, Clock, Ruler, Edit2, Camera, Video, Image } from 'lucide-react';
-import { SpeedUnit } from '../App';
 import { t, Language } from '../translations';
 import { calculatePhotoInterval } from '../services/geometryService';
 import icon from '../../assets/icon.png';
@@ -41,6 +40,67 @@ interface SidebarProps {
   setLanguage: (l: Language) => void;
 }
 
+// Reusable Numeric Input handling natural typing & validation
+const SidebarNumberInput = ({ 
+    value, 
+    onChange, 
+    className,
+    min,
+    max,
+    step
+}: { 
+    value: number, 
+    onChange: (val: number) => void, 
+    className: string,
+    min?: number,
+    max?: number,
+    step?: number
+}) => {
+    const [local, setLocal] = useState(String(value));
+    
+    useEffect(() => {
+        if (Number(local) !== value && local !== '' && local !== '-' && local !== '.') {
+            setLocal(String(value));
+        }
+    }, [value]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setLocal(e.target.value);
+    };
+
+    const handleBlur = () => {
+        let parsed = parseFloat(local);
+        if (isNaN(parsed)) {
+            parsed = value;
+        }
+        
+        // Validation clamping
+        if (min !== undefined && parsed < min) parsed = min;
+        if (max !== undefined && parsed > max) parsed = max;
+
+        onChange(parsed);
+        setLocal(String(parsed));
+    };
+    
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+    };
+
+    return (
+        <input 
+            type="number" 
+            className={`${className} ${Number(local) < (min ?? -Infinity) || Number(local) > (max ?? Infinity) ? 'border-red-500 focus:ring-red-500' : ''}`}
+            value={local} 
+            onChange={handleChange} 
+            onBlur={handleBlur} 
+            onKeyDown={handleKeyDown} 
+            min={min}
+            max={max}
+            step={step}
+        />
+    );
+};
+
 export const Sidebar: React.FC<SidebarProps> = ({
   settings,
   setSettings,
@@ -71,29 +131,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [projectName, setProjectName] = useState('');
-  
-  // Local state for numeric inputs to allow typing "-", "." etc
-  const [localAltitude, setLocalAltitude] = useState(String(settings.altitude));
-  const [localSpeed, setLocalSpeed] = useState('');
-  const [localHeading, setLocalHeading] = useState(String(settings.headingManual));
-  const [localGimbal, setLocalGimbal] = useState(String(settings.gimbalPitch));
-  const [localCurve, setLocalCurve] = useState(String(settings.curveSize));
-  const [localOverlapV, setLocalOverlapV] = useState(String(settings.mappingOverlap));
-  const [localOverlapH, setLocalOverlapH] = useState(String(settings.mappingOverlapH));
-
-  // Sync props to local state when props change externally
-  useEffect(() => { setLocalAltitude(String(settings.altitude)); }, [settings.altitude]);
-  useEffect(() => { setLocalHeading(String(settings.headingManual)); }, [settings.headingManual]);
-  useEffect(() => { setLocalGimbal(String(settings.gimbalPitch)); }, [settings.gimbalPitch]);
-  useEffect(() => { setLocalCurve(String(settings.curveSize)); }, [settings.curveSize]);
-  useEffect(() => { setLocalOverlapV(String(settings.mappingOverlap)); }, [settings.mappingOverlap]);
-  useEffect(() => { setLocalOverlapH(String(settings.mappingOverlapH)); }, [settings.mappingOverlapH]);
-  
-  // Speed sync
-  useEffect(() => {
-     const val = speedUnit === 'kmh' ? settings.speedKmh : (settings.speedKmh / 3.6);
-     setLocalSpeed(val.toFixed(2));
-  }, [settings.speedKmh, speedUnit]);
 
   // Auto Calculate Photo Interval if Mapping Mode is active
   useEffect(() => {
@@ -121,32 +158,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       onSaveProject(projectName.trim());
       setProjectName('');
     }
-  };
-
-  const handleRawChange = (
-      setter: React.Dispatch<React.SetStateAction<string>>, 
-      key: keyof FlightSettings, 
-      val: string
-  ) => {
-      setter(val);
-      // Allow negatives and decimals during typing
-      if (val === '' || val === '-' || val === '.') return;
-      if (!isNaN(Number(val))) {
-          setSettings(prev => ({ ...prev, [key]: Number(val) }));
-      }
-  };
-
-  const handleSpeedRawChange = (val: string) => {
-      setLocalSpeed(val);
-      if (val === '' || val === '-' || val === '.') return;
-      if (!isNaN(Number(val))) {
-          const num = Number(val);
-          if (speedUnit === 'kmh') {
-              setSettings(prev => ({ ...prev, speedKmh: num }));
-          } else {
-              setSettings(prev => ({ ...prev, speedKmh: num * 3.6 }));
-          }
-      }
   };
 
   // High contrast white input
@@ -407,20 +418,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">{t("altitude", language)}</label>
-              <input 
-                type="text" 
-                value={localAltitude}
-                onChange={(e) => handleRawChange(setLocalAltitude, 'altitude', e.target.value)}
-                className={inputClass}
+              <SidebarNumberInput 
+                  className={inputClass} 
+                  value={settings.altitude} 
+                  onChange={(v) => setSettings(p => ({ ...p, altitude: v }))} 
+                  min={1} max={500}
               />
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">{t("speed", language)} ({speedUnit === 'kmh' ? 'km/h' : 'm/s'})</label>
-              <input 
-                type="text" 
-                value={localSpeed}
-                onChange={(e) => handleSpeedRawChange(e.target.value)}
-                className={inputClass}
+              <SidebarNumberInput 
+                  className={inputClass} 
+                  value={speedUnit === 'kmh' ? settings.speedKmh : (settings.speedKmh / 3.6)} 
+                  onChange={(v) => {
+                      const newKmh = speedUnit === 'kmh' ? v : v * 3.6;
+                      setSettings(p => ({ ...p, speedKmh: newKmh }));
+                  }} 
+                  min={0.1} max={100}
               />
             </div>
           </div>
@@ -439,24 +453,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         ))}
                     </select>
                  </div>
+                 
+                 {/* GRID PATTERN SELECTION */}
+                 <div>
+                    <label className="block text-[10px] font-bold text-orange-800 mb-1">{t("grid_pattern", language)}</label>
+                    <select 
+                        value={settings.mappingPattern}
+                        onChange={(e) => setSettings(prev => ({...prev, mappingPattern: e.target.value as any}))}
+                        className={inputClass}
+                    >
+                        <option value="parallel">{t("pattern_parallel", language)}</option>
+                        <option value="crosshatch">{t("pattern_cross", language)}</option>
+                    </select>
+                 </div>
+
                  <div className="grid grid-cols-2 gap-2">
                      <div>
                         <label className="block text-[10px] font-bold text-orange-800 mb-1">{t("overlap_v", language)}</label>
-                        <input 
-                            type="text" 
-                            value={localOverlapV}
-                            onChange={(e) => handleRawChange(setLocalOverlapV, 'mappingOverlap', e.target.value)}
-                            className={inputClass}
-                        />
+                        <SidebarNumberInput className={inputClass} value={settings.mappingOverlap} onChange={v => setSettings(p => ({...p, mappingOverlap: v}))} min={0} max={99} />
                      </div>
                      <div>
                         <label className="block text-[10px] font-bold text-orange-800 mb-1">{t("overlap_h", language)}</label>
-                        <input 
-                            type="text" 
-                            value={localOverlapH}
-                            onChange={(e) => handleRawChange(setLocalOverlapH, 'mappingOverlapH', e.target.value)}
-                            className={inputClass}
-                        />
+                        <SidebarNumberInput className={inputClass} value={settings.mappingOverlapH} onChange={v => setSettings(p => ({...p, mappingOverlapH: v}))} min={0} max={99} />
                      </div>
                      <div className="col-span-2">
                         <label className="block text-[10px] font-bold text-orange-800 mb-1">{t("calc_interval", language)}</label>
@@ -499,33 +517,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {settings.headingMode === 'manual' && (
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">{t("manual_heading", language)}</label>
-              <input 
-                type="text"
-                value={localHeading}
-                onChange={(e) => handleRawChange(setLocalHeading, 'headingManual', e.target.value)}
-                className={inputClass}
-              />
+              <SidebarNumberInput className={inputClass} value={settings.headingManual} onChange={v => setSettings(p => ({...p, headingManual: v}))} min={0} max={360}/>
             </div>
           )}
 
            <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">{t("gimbal_pitch", language)}</label>
-              <input 
-                type="text"
-                value={localGimbal}
-                onChange={(e) => handleRawChange(setLocalGimbal, 'gimbalPitch', e.target.value)}
-                className={inputClass}
-              />
+              <SidebarNumberInput className={inputClass} value={settings.gimbalPitch} onChange={v => setSettings(p => ({...p, gimbalPitch: v}))} min={-90} max={30} />
             </div>
              <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">{t("curve_size", language)}</label>
-              <input 
-                type="text"
-                value={localCurve}
-                onChange={(e) => handleRawChange(setLocalCurve, 'curveSize', e.target.value)}
-                className={inputClass}
-              />
+              <SidebarNumberInput className={inputClass} value={settings.curveSize} onChange={v => setSettings(p => ({...p, curveSize: v}))} min={0} max={100} />
             </div>
           </div>
 

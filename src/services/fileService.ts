@@ -1,3 +1,4 @@
+
 import Papa from 'papaparse';
 import JSZip from 'jszip';
 import FileSaver from 'file-saver';
@@ -85,109 +86,116 @@ export const parseCSV = (file: File): Promise<Waypoint[]> => {
 };
 
 export const parseKML = async (file: File): Promise<Route[]> => {
-  const text = await file.text();
-  const parser = new DOMParser();
-  const kml = parser.parseFromString(text, 'text/xml');
-  const routes: Route[] = [];
+  try {
+      const text = await file.text();
+      const parser = new DOMParser();
+      const kml = parser.parseFromString(text, 'text/xml');
+      const routes: Route[] = [];
 
-  const placemarks = kml.getElementsByTagName('Placemark');
-  const pointWaypoints: Waypoint[] = [];
+      const placemarks = kml.getElementsByTagName('Placemark');
+      const pointWaypoints: Waypoint[] = [];
 
-  for (let i = 0; i < placemarks.length; i++) {
-    const pm = placemarks[i];
-    const name = pm.getElementsByTagName('name')[0]?.textContent || `Route ${i}`;
-    
-    // Check for Point
-    const point = pm.getElementsByTagName('Point')[0];
-    if (point) {
-      const coords = point.getElementsByTagName('coordinates')[0]?.textContent?.trim();
-      if (coords) {
-        const [lon, lat] = coords.split(',').map(Number);
-        pointWaypoints.push({
-          id: pointWaypoints.length + 1,
-          latitude: lat,
-          longitude: lon,
-          altitude: 30,
-          heading: 0,
-          curveSize: 0,
-          rotationDir: 0,
-          gimbalMode: 0,
-          gimbalPitch: 0,
-          actionType1: -1,
-          actionParam1: 0,
-          actionType2: -1,
-          actionParam2: 0,
-          altitudeMode: 1,
-          speed: 0,
-          poiLat: 0,
-          poiLon: 0,
-          poiAlt: 0,
-          poiAltMode: 0,
-          photoTimeInterval: -1,
-          photoDistInterval: -1
-        });
-      }
-    }
+      for (let i = 0; i < placemarks.length; i++) {
+        const pm = placemarks[i];
+        const name = pm.getElementsByTagName('name')[0]?.textContent || `Route ${i}`;
+        
+        // Check for Point
+        const point = pm.getElementsByTagName('Point')[0];
+        if (point) {
+          const coords = point.getElementsByTagName('coordinates')[0]?.textContent?.trim();
+          if (coords) {
+            const [lon, lat] = coords.split(',').map(Number);
+            if(!isNaN(lon) && !isNaN(lat)) {
+                pointWaypoints.push({
+                  id: pointWaypoints.length + 1,
+                  latitude: lat,
+                  longitude: lon,
+                  altitude: 30,
+                  heading: 0,
+                  curveSize: 0,
+                  rotationDir: 0,
+                  gimbalMode: 0,
+                  gimbalPitch: 0,
+                  actionType1: -1,
+                  actionParam1: 0,
+                  actionType2: -1,
+                  actionParam2: 0,
+                  altitudeMode: 1,
+                  speed: 0,
+                  poiLat: 0,
+                  poiLon: 0,
+                  poiAlt: 0,
+                  poiAltMode: 0,
+                  photoTimeInterval: -1,
+                  photoDistInterval: -1
+                });
+            }
+          }
+        }
 
-    // Check for LineString
-    const lineString = pm.getElementsByTagName('LineString')[0];
-    if (lineString) {
-      const coordStr = lineString.getElementsByTagName('coordinates')[0]?.textContent?.trim();
-      if (coordStr) {
-        const parts = coordStr.split(/\s+/);
-        const lineWps: Waypoint[] = parts.map((part, idx) => {
-          const [lon, lat] = part.split(',').map(Number);
-          return {
-             id: idx + 1,
-             latitude: lat,
-             longitude: lon,
-             altitude: 30,
-             heading: 0,
-             curveSize: 0,
-             rotationDir: 0,
-             gimbalMode: 0,
-             gimbalPitch: 0,
-             actionType1: -1,
-             actionParam1: 0,
-             actionType2: -1,
-             actionParam2: 0,
-             altitudeMode: 1,
-             speed: 0,
-             poiLat: 0,
-             poiLon: 0,
-             poiAlt: 0,
-             poiAltMode: 0,
-             photoTimeInterval: -1,
-             photoDistInterval: -1
-          };
-        }).filter(w => !isNaN(w.latitude));
+        // Check for LineString
+        const lineString = pm.getElementsByTagName('LineString')[0];
+        if (lineString) {
+          const coordStr = lineString.getElementsByTagName('coordinates')[0]?.textContent?.trim();
+          if (coordStr) {
+            const parts = coordStr.split(/\s+/);
+            const lineWps: Waypoint[] = parts.map((part, idx) => {
+              const [lon, lat] = part.split(',').map(Number);
+              return {
+                 id: idx + 1,
+                 latitude: lat,
+                 longitude: lon,
+                 altitude: 30,
+                 heading: 0,
+                 curveSize: 0,
+                 rotationDir: 0,
+                 gimbalMode: 0,
+                 gimbalPitch: 0,
+                 actionType1: -1,
+                 actionParam1: 0,
+                 actionType2: -1,
+                 actionParam2: 0,
+                 altitudeMode: 1,
+                 speed: 0,
+                 poiLat: 0,
+                 poiLon: 0,
+                 poiAlt: 0,
+                 poiAltMode: 0,
+                 photoTimeInterval: -1,
+                 photoDistInterval: -1
+              };
+            }).filter(w => !isNaN(w.latitude) && !isNaN(w.longitude));
 
-        if(lineWps.length > 0) {
-            routes.push({
-                id: generateId(),
-                name: name,
-                waypoints: lineWps,
-                color: '#3388ff',
-                locked: false,
-                homePoint: { lat: lineWps[0].latitude, lng: lineWps[0].longitude }
-            });
+            if(lineWps.length > 0) {
+                routes.push({
+                    id: generateId(),
+                    name: name,
+                    waypoints: lineWps,
+                    color: '#3388ff',
+                    locked: false,
+                    homePoint: { lat: lineWps[0].latitude, lng: lineWps[0].longitude }
+                });
+            }
+          }
         }
       }
-    }
-  }
 
-  if (pointWaypoints.length > 0) {
-    routes.push({
-      id: generateId(),
-      name: file.name.replace('.kml', ''),
-      waypoints: pointWaypoints,
-      color: '#ff3388',
-      locked: false,
-      homePoint: { lat: pointWaypoints[0].latitude, lng: pointWaypoints[0].longitude }
-    });
-  }
+      if (pointWaypoints.length > 0) {
+        routes.push({
+          id: generateId(),
+          name: file.name.replace('.kml', ''),
+          waypoints: pointWaypoints,
+          color: '#ff3388',
+          locked: false,
+          homePoint: { lat: pointWaypoints[0].latitude, lng: pointWaypoints[0].longitude }
+        });
+      }
 
-  return routes;
+      return routes;
+  } catch (e) {
+      console.error("KML Parse Error", e);
+      return [];
+  }
 };
 
 export const exportLitchiZip = (routes: Route[]) => {
@@ -418,10 +426,11 @@ const generateWaylinesWpml = (routeName: string, waypoints: Waypoint[]) => {
 </kml>`;
 };
 
-export const exportDJIWPML = (routes: Route[]) => {
+export const exportDJIWPML = async (routes: Route[]) => {
     const masterZip = new JSZip();
-
-    routes.forEach((route, i) => {
+    
+    // Process all routes in parallel promises
+    const promises = routes.map(async (route, i) => {
         const kmzZip = new JSZip();
         const wpmzFolder = kmzZip.folder("wpmz");
         
@@ -432,14 +441,13 @@ export const exportDJIWPML = (routes: Route[]) => {
             wpmzFolder.file("template.kml", template);
             wpmzFolder.file("waylines.wpml", waylines);
         }
-
-        kmzZip.generateAsync({type:"blob"}).then(blob => {
-             masterZip.file(`${route.name}_DJI_Fly.kmz`, blob);
-             if (i === routes.length - 1) {
-                 masterZip.generateAsync({type:"blob"}).then(content => {
-                     saveAs(content, "DJI_WPML_Missions.zip");
-                 })
-             }
-        });
+        
+        const blob = await kmzZip.generateAsync({type:"blob"});
+        masterZip.file(`${route.name}_DJI_Fly.kmz`, blob);
     });
+
+    await Promise.all(promises);
+
+    const content = await masterZip.generateAsync({type:"blob"});
+    saveAs(content, "DJI_WPML_Missions.zip");
 };

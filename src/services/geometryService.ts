@@ -1,6 +1,8 @@
 
-import { Waypoint, Route, FlightSettings, DRONE_PRESETS } from '../types';
+
+import { Waypoint, Route, FlightSettings, DRONE_PRESETS, RouteStats } from '../types';
 import * as turf from '@turf/turf';
+import { polygon as createPolygon, lineString as createLineString, point as createPoint, points as createPoints } from '@turf/helpers';
 
 /**
  * Converts degrees to radians
@@ -28,6 +30,24 @@ export const calculateBearing = (lat1: number, lon1: number, lat2: number, lon2:
 
   let brng = toDeg(Math.atan2(y, x));
   return (brng + 360) % 360;
+};
+
+/**
+ * Calculates distance between two points in meters (Haversine)
+ */
+export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371e3; // Earth radius in meters
+    const phi1 = toRad(lat1);
+    const phi2 = toRad(lat2);
+    const deltaPhi = toRad(lat2 - lat1);
+    const deltaLambda = toRad(lon2 - lon1);
+
+    const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+              Math.cos(phi1) * Math.cos(phi2) *
+              Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c;
 };
 
 /**
@@ -63,238 +83,277 @@ export const updateWaypointsWithBearings = (waypoints: Waypoint[]): Waypoint[] =
     if (index < waypoints.length - 1) {
       const nextWp = waypoints[index + 1];
       bearing = calculateBearing(wp.latitude, wp.longitude, nextWp.latitude, nextWp.longitude);
-    } else {
-      // Last point keeps previous bearing or 0
+    } else if (index > 0) {
       const prevWp = waypoints[index - 1];
       bearing = calculateBearing(prevWp.latitude, prevWp.longitude, wp.latitude, wp.longitude);
     }
-    return { ...wp, heading: Number(bearing.toFixed(2)) };
+    return { ...wp, heading: parseFloat(bearing.toFixed(2)) };
   });
 };
 
 /**
- * Haversine formula to calculate distance between two points in meters
- */
-export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-    const R = 6371e3; // Earth radius in meters
-    const phi1 = toRad(lat1);
-    const phi2 = toRad(lat2);
-    const deltaPhi = toRad(lat2 - lat1);
-    const deltaLambda = toRad(lon2 - lon1);
-
-    const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
-              Math.cos(phi1) * Math.cos(phi2) *
-              Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c;
-};
-
-/**
- * Calculates Camera Footprint on ground (Width and Height in meters)
- */
-export const calculateFootprintDimensions = (
-    altitude: number,
-    modelName: string
-) => {
-    const preset = DRONE_PRESETS.find(p => p.model === modelName) || DRONE_PRESETS[0];
-    
-    // Width (Lateral coverage) depends on Horizontal FOV
-    const fovHRad = toRad(preset.fovH);
-    const width = 2 * altitude * Math.tan(fovHRad / 2);
-
-    // Height (Forward coverage) depends on Vertical FOV
-    const fovVRad = toRad(preset.fovV);
-    const height = 2 * altitude * Math.tan(fovVRad / 2);
-
-    return { width, height };
-};
-
-/**
- * Calculates Photo Interval based on Overlap
+ * Calculates Photo Interval (seconds) based on Drone, Altitude, Speed, and Overlap
  */
 export const calculatePhotoInterval = (
     altitude: number, 
     speedKmh: number, 
-    modelName: string, 
+    droneModel: string, 
     overlapPercent: number
 ): number => {
-    if (speedKmh <= 0 || altitude <= 0) return -1;
-    
-    const dims = calculateFootprintDimensions(altitude, modelName);
-    const footprintHeight = dims.height;
-
-    // Distance = Footprint * (1 - overlap)
-    const distanceBetweenPhotos = footprintHeight * (1 - (overlapPercent / 100));
-
-    // Time = Distance / Speed(m/s)
+    const drone = DRONE_PRESETS.find(d => d.model === droneModel) || DRONE_PRESETS[0];
     const speedMs = speedKmh / 3.6;
-    const interval = distanceBetweenPhotos / speedMs;
+    if (speedMs <= 0 || altitude <= 0) return -1;
 
+    // Vertical FOV calculation for ground footprint height
+    const fovVRad = (drone.fovV * Math.PI) / 180;
+    const groundHeight = 2 * altitude * Math.tan(fovVRad / 2);
+
+    // Distance between photos
+    const distBetweenPhotos = groundHeight * (1 - (overlapPercent / 100));
+    
+    // Time interval
+    const interval = distBetweenPhotos / speedMs;
     return parseFloat(interval.toFixed(1));
 };
 
 /**
- * Generates a grid pattern (zig-zag) inside a polygon with rotation
+ * Calculate Ground Sampling Distance (cm/px)
  */
-export const generateGridWaypoints = (
-    polygonCoords: { lat: number, lng: number }[], 
-    settings: FlightSettings,
-    rotationAngle: number = 0
-): { lat: number, lng: number }[] => {
+export const calculateGSD = (
+    altitude: number, 
+    sensorWidthMm: number, 
+    imageWidthPx: number,
+    focalLengthMm: number
+): number => {
+    // Standard Photogrammetry Formula:
+    // GSD (cm/px) = (Sensor Width (mm) * Altitude (m) * 100) / (Focal Length (mm) * Image Width (px))
     
-    // 1. Calculate Lane Spacing based on Lateral Overlap
-    const dims = calculateFootprintDimensions(settings.altitude, settings.selectedDroneModel);
+    if (focalLengthMm <= 0 || imageWidthPx <= 0) return 0;
     
-    // Spacing = FootprintWidth * (1 - SideOverlap)
-    // IMPORTANT: If overlap is 0, we cover width. If overlap is 20%, we step 80% of width.
-    const laneSpacingMeters = dims.width * (1 - (settings.mappingOverlapH / 100));
-    
-    if (laneSpacingMeters <= 0) return polygonCoords; 
+    const gsd = (sensorWidthMm * altitude * 100) / (focalLengthMm * imageWidthPx);
+    return gsd;
+}
 
-    // 2. Convert to Turf Polygon
-    const turfCoords = polygonCoords.map(p => [p.lng, p.lat]);
-    if (turfCoords.length > 0 && 
-        (turfCoords[0][0] !== turfCoords[turfCoords.length-1][0] || 
-         turfCoords[0][1] !== turfCoords[turfCoords.length-1][1])) {
-        turfCoords.push(turfCoords[0]);
-    }
-    const poly = turf.polygon([turfCoords]);
+// Helper to project lat/lon to local cartesian (meters) relative to a center point
+const projectToLocalCartesian = (lat: number, lng: number, centerLat: number, centerLng: number) => {
+    const R = 6371e3;
+    const x = toRad(lng - centerLng) * Math.cos(toRad(centerLat)) * R;
+    const y = toRad(lat - centerLat) * R;
+    return { x, y };
+};
 
-    // 3. Rotate Polygon "Flat" (Reverse Rotation) to calculate simple horizontal scan lines
-    const rotatedPoly = turf.transformRotate(poly, -rotationAngle, { pivot: turf.centroid(poly) });
-    const bbox = turf.bbox(rotatedPoly); // [minX, minY, maxX, maxY]
-
-    const resultPoints: number[][] = [];
-    
-    // 4. Scan-line algorithm on rotated bbox
-    let currentLat = bbox[3]; // North
-    const minLat = bbox[1];   // South
-    
-    // Approx degrees per meter. 
-    const latStep = laneSpacingMeters / 111132; // ~111km per degree
-
-    // Inset slightly
-    currentLat -= (latStep / 2);
-
-    let direction = 1;
-
-    while (currentLat > minLat) {
-        // Horizontal line
-        const line = turf.lineString([
-            [bbox[0] - 1.0, currentLat], 
-            [bbox[2] + 1.0, currentLat]
-        ]);
-
-        const intersects = turf.lineIntersect(line, rotatedPoly);
-        
-        if (intersects.features.length >= 2) {
-            const points = intersects.features.map(f => f.geometry.coordinates);
-            points.sort((a, b) => a[0] - b[0]);
-
-            if (direction === 1) {
-                for (let i = 0; i < points.length; i++) resultPoints.push(points[i]);
-            } else {
-                for (let i = points.length - 1; i >= 0; i--) resultPoints.push(points[i]);
-            }
-            direction *= -1;
-        }
-        currentLat -= latStep;
-    }
-
-    if (resultPoints.length === 0) return polygonCoords;
-
-    // 5. Convert points back to GeoJSON FeatureCollection
-    const pointFeatures = turf.featureCollection(
-        resultPoints.map(p => turf.point(p))
-    );
-
-    // 6. Rotate points back to original angle
-    const rotatedBackPoints = turf.transformRotate(pointFeatures, rotationAngle, { pivot: turf.centroid(poly) });
-
-    // 7. Extract coords
-    return rotatedBackPoints.features.map(f => ({
-        lat: f.geometry.coordinates[1],
-        lng: f.geometry.coordinates[0]
-    }));
+// Helper to project local cartesian back to lat/lon
+const projectFromLocalCartesian = (x: number, y: number, centerLat: number, centerLng: number) => {
+    const R = 6371e3;
+    const lat = centerLat + toDeg(y / R);
+    const lng = centerLng + toDeg(x / (R * Math.cos(toRad(centerLat))));
+    return { lat, lng };
 };
 
 /**
- * Estimates total distance and flight time
+ * Robust Grid Generation for Mapping
  */
-export const estimateRouteStats = (
-    routes: Route[], 
-    settings: FlightSettings,
-    targetRouteId: string | 'all' = 'all'
-) => {
-    let totalDistance = 0;
-    let totalTimeSeconds = 0;
+export const generateGridWaypoints = (
+  polygonCoords: { lat: number; lng: number }[],
+  settings: FlightSettings,
+  rotationAngle: number
+): { lat: number; lng: number }[] => {
+    if (polygonCoords.length < 3) return polygonCoords;
+    
+    // 1. Calculate Centroid
+    const turfPolyCoords = polygonCoords.map(p => [p.lng, p.lat]);
+    if (turfPolyCoords[0][0] !== turfPolyCoords[turfPolyCoords.length-1][0]) {
+        turfPolyCoords.push(turfPolyCoords[0]);
+    }
+    const turfPoly = createPolygon([turfPolyCoords]);
+    const centroid = turf.centroid(turfPoly);
+    const centerLng = centroid.geometry.coordinates[0];
+    const centerLat = centroid.geometry.coordinates[1];
+
+    // 2. Project Polygon to Local Cartesian
+    const projectedCoords = polygonCoords.map(p => projectToLocalCartesian(p.lat, p.lng, centerLat, centerLng));
+    
+    const drone = DRONE_PRESETS.find(d => d.model === settings.selectedDroneModel) || DRONE_PRESETS[0];
+    const altitude = settings.altitude;
+    const fovHRad = (drone.fovH * Math.PI) / 180;
+    const footprintWidth = 2 * altitude * Math.tan(fovHRad / 2); // Lateral coverage
+    const fovVRad = (drone.fovV * Math.PI) / 180;
+    const footprintHeight = 2 * altitude * Math.tan(fovVRad / 2); // Forward coverage
+    const overlapHDecimal = settings.mappingOverlapH / 100;
+    const laneSpacing = footprintWidth * (1 - overlapHDecimal);
+    const overlapVDecimal = settings.mappingOverlap / 100;
+    const photoSpacing = footprintHeight * (1 - overlapVDecimal);
+
+    if (laneSpacing <= 0.1) return polygonCoords.map(p => ({lat: p.lat, lng: p.lng}));
+
+    // Function to generate a single pass of lines
+    const generatePass = (angle: number): { lat: number, lng: number }[] => {
+        // Rotate Polygon by -Angle
+        const rad = toRad(-angle);
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+
+        const rotatedCoords = projectedCoords.map(p => ({
+            x: p.x * cos - p.y * sin,
+            y: p.x * sin + p.y * cos
+        }));
+
+        // Bounding Box
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        rotatedCoords.forEach(p => {
+            if(p.x < minX) minX = p.x;
+            if(p.x > maxX) maxX = p.x;
+            if(p.y < minY) minY = p.y;
+            if(p.y > maxY) maxY = p.y;
+        });
+
+        const gridPointsMetric: {x: number, y: number}[] = [];
+        
+        // Helper intersection
+        const getIntersection = (y: number, p1: {x:number, y:number}, p2: {x:number, y:number}) => {
+            if ((p1.y > y && p2.y > y) || (p1.y < y && p2.y < y)) return null;
+            if (p1.y === p2.y) return null; 
+            const t = (y - p1.y) / (p2.y - p1.y);
+            const x = p1.x + t * (p2.x - p1.x);
+            return { x, y };
+        };
+
+        let lineIndex = 0;
+        let currentY = minY + (laneSpacing / 2);
+
+        while (currentY < maxY) {
+            const intersections = [];
+            for (let i = 0; i < rotatedCoords.length; i++) {
+                const p1 = rotatedCoords[i];
+                const p2 = rotatedCoords[(i + 1) % rotatedCoords.length];
+                const inter = getIntersection(currentY, p1, p2);
+                if (inter) intersections.push(inter);
+            }
+
+            intersections.sort((a, b) => a.x - b.x);
+
+            for (let i = 0; i < intersections.length - 1; i += 2) {
+                const pStart = intersections[i];
+                const pEnd = intersections[i+1];
+                const lineLen = pEnd.x - pStart.x;
+                const segmentPoints = [pStart];
+
+                if (photoSpacing > 0 && lineLen > photoSpacing) {
+                    const numPhotos = Math.floor(lineLen / photoSpacing);
+                    for (let k = 1; k <= numPhotos; k++) {
+                         const ratio = k * photoSpacing / lineLen;
+                         const x = pStart.x + (pEnd.x - pStart.x) * ratio;
+                         segmentPoints.push({ x, y: currentY });
+                    }
+                }
+                
+                segmentPoints.push(pEnd);
+                if (lineIndex % 2 !== 0) segmentPoints.reverse();
+                gridPointsMetric.push(...segmentPoints);
+            }
+            currentY += laneSpacing;
+            lineIndex++;
+        }
+
+        // Un-Rotate and Project Back
+        const revRad = toRad(angle);
+        const revCos = Math.cos(revRad);
+        const revSin = Math.sin(revRad);
+
+        return gridPointsMetric.map(p => {
+            const xRot = p.x * revCos - p.y * revSin;
+            const yRot = p.x * revSin + p.y * revCos;
+            return projectFromLocalCartesian(xRot, yRot, centerLat, centerLng);
+        });
+    };
+
+    // Main Logic for Parallel or Cross Hatch
+    let finalPoints = generatePass(rotationAngle);
+
+    if (settings.mappingPattern === 'crosshatch') {
+        const pass2 = generatePass(rotationAngle + 90);
+        finalPoints = [...finalPoints, ...pass2];
+    }
+
+    if (finalPoints.length === 0) return polygonCoords.map(p => ({lat: p.lat, lng: p.lng}));
+
+    return finalPoints;
+};
+
+/**
+ * Calculates Flight Statistics
+ */
+export const estimateRouteStats = (routes: Route[], settings: FlightSettings, filterId: string | 'all'): RouteStats => {
+    let totalDist = 0;
+    let totalTime = 0;
     let photoCount = 0;
     let videoCount = 0;
 
-    const routesToCalc = targetRouteId === 'all' 
-        ? routes 
-        : routes.filter(r => r.id === targetRouteId);
+    const routesToCalc = filterId === 'all' ? routes : routes.filter(r => r.id === filterId);
 
     routesToCalc.forEach(route => {
         if (route.waypoints.length === 0) return;
 
-        // 1. Commute
-        const distToStart = calculateDistance(
-            route.homePoint.lat, route.homePoint.lng, 
-            route.waypoints[0].latitude, route.waypoints[0].longitude
-        );
-        totalDistance += distToStart;
-        const speedMs = settings.speedKmh / 3.6; 
-        totalTimeSeconds += (distToStart / (speedMs || 5)); 
+        // 1. Commute (Home -> WP1)
+        const home = route.homePoint;
+        const wp1 = route.waypoints[0];
+        const commuteDist = calculateDistance(home.lat, home.lng, wp1.latitude, wp1.longitude);
+        totalDist += commuteDist;
 
-
-        // 2. Path
+        // 2. Route Path
         for (let i = 0; i < route.waypoints.length - 1; i++) {
-            const wp = route.waypoints[i];
-            const nextWp = route.waypoints[i+1];
-            const dist = calculateDistance(wp.latitude, wp.longitude, nextWp.latitude, nextWp.longitude);
+            const w1 = route.waypoints[i];
+            const w2 = route.waypoints[i+1];
+            const segDist = calculateDistance(w1.latitude, w1.longitude, w2.latitude, w2.longitude);
+            totalDist += segDist;
+
+            // Action Delays
+            if (w1.actionType1 === 0) totalTime += (w1.actionParam1 / 1000); // ms -> s ? Litchi param is usually ms
+            // Simple assumption: Action param 1 is seconds for STAY
+            if (w1.actionType1 === 0) totalTime += (w1.actionParam1); 
             
-            totalDistance += dist;
-            
-            const speed = wp.speed > 0 ? wp.speed : (settings.speedKmh / 3.6);
-            const segmentTime = dist / (speed || 1);
-            totalTimeSeconds += segmentTime;
+            // Photo Count (Action 1)
+            if (w1.actionType1 === 1) photoCount++;
+            // Video Count (Action 2)
+            if (w1.actionType1 === 2) videoCount++;
+        }
+        
+        // Last point action
+        const lastWp = route.waypoints[route.waypoints.length - 1];
+        if (lastWp.actionType1 === 1) photoCount++;
 
-            if (wp.actionType1 === 1) photoCount++; 
-            if (wp.actionType1 === 2) videoCount++; 
-
-            // Interval Photo Calculation
-            if (wp.photoTimeInterval > 0 && wp.actionType1 !== 2 && wp.actionType1 !== 3) {
-                photoCount += Math.floor(segmentTime / wp.photoTimeInterval);
-            }
-
-            if (wp.actionType1 === 0) totalTimeSeconds += 5; 
-            if (wp.actionType1 === 1) totalTimeSeconds += 2; 
+        // 3. Return (Last WP -> Home) if RTH
+        if (settings.finishAction === 1) { // RTH
+            const returnDist = calculateDistance(lastWp.latitude, lastWp.longitude, home.lat, home.lng);
+            totalDist += returnDist;
         }
 
-        if (route.waypoints.length > 0) {
-             const lastWp = route.waypoints[route.waypoints.length-1];
-             if (lastWp.actionType1 === 1) photoCount++;
-             if (lastWp.actionType1 === 2) videoCount++;
-        }
-
-        // 3. Return
-        if (settings.finishAction === 1) { 
-             const lastWp = route.waypoints[route.waypoints.length - 1];
-             const distHome = calculateDistance(
-                 lastWp.latitude, lastWp.longitude,
-                 route.homePoint.lat, route.homePoint.lng
-             );
-             totalDistance += distHome;
-             const rthSpeed = 10; 
-             totalTimeSeconds += (distHome / rthSpeed);
+        // 4. Mapping Interval Photos Estimation (Litchi Interval)
+        const interval = route.waypoints[0].photoTimeInterval;
+        if (interval > 0) {
+            // Estimate based on time
+            let routePathLen = 0;
+             for (let i = 0; i < route.waypoints.length - 1; i++) {
+                const w1 = route.waypoints[i];
+                const w2 = route.waypoints[i+1];
+                routePathLen += calculateDistance(w1.latitude, w1.longitude, w2.latitude, w2.longitude);
+             }
+             const speedMs = route.waypoints[0].speed > 0 ? route.waypoints[0].speed : (settings.speedKmh/3.6);
+             const pathTime = routePathLen / speedMs;
+             photoCount += Math.floor(pathTime / interval);
         }
     });
 
+    // Total Time = Distance / Speed
+    // Average speed from settings
+    const speedMs = settings.speedKmh / 3.6;
+    if (speedMs > 0) {
+        totalTime += (totalDist / speedMs);
+    }
+
     return {
-        totalDistance, 
-        totalTimeMinutes: totalTimeSeconds / 60,
+        totalDistance: totalDist,
+        totalTimeMinutes: totalTime / 60,
         photoCount,
         videoCount
     };
