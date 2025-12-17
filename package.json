@@ -1,7 +1,7 @@
 {
   "name": "dji-fly-planner-pro",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "main": "electron.js",
   "description": "Professional flight planning tool for DJI drones",
