@@ -1,23 +1,11 @@
 
-
 import { Waypoint, Route, FlightSettings, DRONE_PRESETS, RouteStats } from '../types';
 import * as turf from '@turf/turf';
 import { polygon as createPolygon, lineString as createLineString, point as createPoint, points as createPoints } from '@turf/helpers';
 
-/**
- * Converts degrees to radians
- */
 const toRad = (deg: number) => (deg * Math.PI) / 180;
-
-/**
- * Converts radians to degrees
- */
 const toDeg = (rad: number) => (rad * 180) / Math.PI;
 
-/**
- * Calculates the bearing (azimuth) between two points
- * Returns 0-360 degrees
- */
 export const calculateBearing = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
   const dLon = toRad(lon2 - lon1);
   const lat1Rad = toRad(lat1);
@@ -32,11 +20,8 @@ export const calculateBearing = (lat1: number, lon1: number, lat2: number, lon2:
   return (brng + 360) % 360;
 };
 
-/**
- * Calculates distance between two points in meters (Haversine)
- */
 export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-    const R = 6371e3; // Earth radius in meters
+    const R = 6371e3; 
     const phi1 = toRad(lat1);
     const phi2 = toRad(lat2);
     const deltaPhi = toRad(lat2 - lat1);
@@ -50,11 +35,8 @@ export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2
     return R * c;
 };
 
-/**
- * Calculates a destination point given a start point, distance (meters), and bearing (degrees)
- */
 export const computeDestinationPoint = (lat: number, lon: number, distanceMeters: number, bearing: number) => {
-    const R = 6371e3; // Earth radius in meters
+    const R = 6371e3; 
     const angularDist = distanceMeters / R;
     const bearingRad = toRad(bearing);
     const latRad = toRad(lat);
@@ -72,9 +54,6 @@ export const computeDestinationPoint = (lat: number, lon: number, distanceMeters
     };
 };
 
-/**
- * Updates waypoints with calculated bearings based on the path
- */
 export const updateWaypointsWithBearings = (waypoints: Waypoint[]): Waypoint[] => {
   if (waypoints.length <= 1) return waypoints;
 
@@ -91,50 +70,64 @@ export const updateWaypointsWithBearings = (waypoints: Waypoint[]): Waypoint[] =
   });
 };
 
-/**
- * Calculates Photo Interval (seconds) based on Drone, Altitude, Speed, and Overlap
- */
 export const calculatePhotoInterval = (
     altitude: number, 
     speedKmh: number, 
     droneModel: string, 
-    overlapPercent: number
+    overlapPercent: number,
+    aspectRatio: '4:3' | '16:9' = '4:3'
 ): number => {
     const drone = DRONE_PRESETS.find(d => d.model === droneModel) || DRONE_PRESETS[0];
     const speedMs = speedKmh / 3.6;
     if (speedMs <= 0 || altitude <= 0) return -1;
 
-    // Vertical FOV calculation for ground footprint height
-    const fovVRad = (drone.fovV * Math.PI) / 180;
-    const groundHeight = 2 * altitude * Math.tan(fovVRad / 2);
-
-    // Distance between photos
-    const distBetweenPhotos = groundHeight * (1 - (overlapPercent / 100));
+    const diagRad = (drone.fovDiagonal * Math.PI) / 180;
+    const aspectHoriz = aspectRatio === '4:3' ? 4 : 16;
+    const aspectVert = aspectRatio === '4:3' ? 3 : 9;
+    const aspectDiag = Math.sqrt(aspectHoriz * aspectHoriz + aspectVert * aspectVert);
     
-    // Time interval
+    // HFOV = 2 * atan( (aspect_horiz / aspect_diag) * tan(fov_diag / 2) )
+    const fovHRad = 2 * Math.atan((aspectHoriz / aspectDiag) * Math.tan(diagRad / 2));
+    // VFOV = 2 * atan( (aspect_vert / aspect_diag) * tan(fov_diag / 2) )
+    const fovVRad = 2 * Math.atan((aspectVert / aspectDiag) * Math.tan(diagRad / 2));
+
+    const groundHeight = 2 * altitude * Math.tan(fovVRad / 2);
+    // Use sin for width as per user's latest example
+    const groundWidth = 2 * altitude * Math.sin(fovHRad / 2);
+
+    const distBetweenPhotos = groundHeight * (1 - (overlapPercent / 100));
     const interval = distBetweenPhotos / speedMs;
     return parseFloat(interval.toFixed(1));
 };
 
-/**
- * Calculate Ground Sampling Distance (cm/px)
- */
 export const calculateGSD = (
-    altitude: number, 
+    distance: number, 
     sensorWidthMm: number, 
     imageWidthPx: number,
     focalLengthMm: number
 ): number => {
-    // Standard Photogrammetry Formula:
-    // GSD (cm/px) = (Sensor Width (mm) * Altitude (m) * 100) / (Focal Length (mm) * Image Width (px))
-    
     if (focalLengthMm <= 0 || imageWidthPx <= 0) return 0;
-    
-    const gsd = (sensorWidthMm * altitude * 100) / (focalLengthMm * imageWidthPx);
+    const gsd = (sensorWidthMm * distance * 100) / (focalLengthMm * imageWidthPx);
     return gsd;
 }
 
-// Helper to project lat/lon to local cartesian (meters) relative to a center point
+/**
+ * Formula do efeito Rolling Shutter (Delta) - PDF p.18
+ * Delta = (V / h) * (FR * (ImH / SH)) * T
+ */
+export const calculateRollingShutterDelta = (
+    velocityMs: number,
+    height: number,
+    trueFocalMm: number,
+    imageHeightPx: number,
+    sensorHeightMm: number,
+    shutterTimeS: number
+): number => {
+    if (height <= 0 || sensorHeightMm <= 0) return 0;
+    const delta = (velocityMs / height) * (trueFocalMm * (imageHeightPx / sensorHeightMm)) * shutterTimeS;
+    return delta;
+};
+
 const projectToLocalCartesian = (lat: number, lng: number, centerLat: number, centerLng: number) => {
     const R = 6371e3;
     const x = toRad(lng - centerLng) * Math.cos(toRad(centerLat)) * R;
@@ -142,7 +135,6 @@ const projectToLocalCartesian = (lat: number, lng: number, centerLat: number, ce
     return { x, y };
 };
 
-// Helper to project local cartesian back to lat/lon
 const projectFromLocalCartesian = (x: number, y: number, centerLat: number, centerLng: number) => {
     const R = 6371e3;
     const lat = centerLat + toDeg(y / R);
@@ -150,17 +142,13 @@ const projectFromLocalCartesian = (x: number, y: number, centerLat: number, cent
     return { lat, lng };
 };
 
-/**
- * Robust Grid Generation for Mapping
- */
 export const generateGridWaypoints = (
   polygonCoords: { lat: number; lng: number }[],
   settings: FlightSettings,
   rotationAngle: number
-): { lat: number; lng: number }[] => {
-    if (polygonCoords.length < 3) return polygonCoords;
+): ( { lat: number, lng: number, isEffort: boolean } )[] => {
+    if (polygonCoords.length < 3) return polygonCoords.map(p => ({...p, isEffort: true}));
     
-    // 1. Calculate Centroid
     const turfPolyCoords = polygonCoords.map(p => [p.lng, p.lat]);
     if (turfPolyCoords[0][0] !== turfPolyCoords[turfPolyCoords.length-1][0]) {
         turfPolyCoords.push(turfPolyCoords[0]);
@@ -170,25 +158,31 @@ export const generateGridWaypoints = (
     const centerLng = centroid.geometry.coordinates[0];
     const centerLat = centroid.geometry.coordinates[1];
 
-    // 2. Project Polygon to Local Cartesian
     const projectedCoords = polygonCoords.map(p => projectToLocalCartesian(p.lat, p.lng, centerLat, centerLng));
     
     const drone = DRONE_PRESETS.find(d => d.model === settings.selectedDroneModel) || DRONE_PRESETS[0];
     const altitude = settings.altitude;
-    const fovHRad = (drone.fovH * Math.PI) / 180;
-    const footprintWidth = 2 * altitude * Math.tan(fovHRad / 2); // Lateral coverage
-    const fovVRad = (drone.fovV * Math.PI) / 180;
-    const footprintHeight = 2 * altitude * Math.tan(fovVRad / 2); // Forward coverage
+    
+    const aspectHoriz = settings.aspectRatio === '4:3' ? 4 : 16;
+    const aspectVert = settings.aspectRatio === '4:3' ? 3 : 9;
+    const aspectDiag = Math.sqrt(aspectHoriz * aspectHoriz + aspectVert * aspectVert);
+
+    const diagRad = (drone.fovDiagonal * Math.PI) / 180;
+    // HFOV = 2 * atan( (aspect_horiz / aspect_diag) * tan(fov_diag / 2) )
+    const fovHRad = 2 * Math.atan((aspectHoriz / aspectDiag) * Math.tan(diagRad / 2));
+    // VFOV = 2 * atan( (aspect_vert / aspect_diag) * tan(fov_diag / 2) )
+    const fovVRad = 2 * Math.atan((aspectVert / aspectDiag) * Math.tan(diagRad / 2));
+
+    const footprintWidth = 2 * altitude * Math.sin(fovHRad / 2); 
+    const footprintHeight = 2 * altitude * Math.tan(fovVRad / 2); 
     const overlapHDecimal = settings.mappingOverlapH / 100;
     const laneSpacing = footprintWidth * (1 - overlapHDecimal);
     const overlapVDecimal = settings.mappingOverlap / 100;
     const photoSpacing = footprintHeight * (1 - overlapVDecimal);
 
-    if (laneSpacing <= 0.1) return polygonCoords.map(p => ({lat: p.lat, lng: p.lng}));
+    if (laneSpacing <= 0.1) return polygonCoords.map(p => ({lat: p.lat, lng: p.lng, isEffort: true}));
 
-    // Function to generate a single pass of lines
-    const generatePass = (angle: number): { lat: number, lng: number }[] => {
-        // Rotate Polygon by -Angle
+    const generatePass = (angle: number): { lat: number, lng: number, isEffort: boolean }[] => {
         const rad = toRad(-angle);
         const cos = Math.cos(rad);
         const sin = Math.sin(rad);
@@ -198,7 +192,6 @@ export const generateGridWaypoints = (
             y: p.x * sin + p.y * cos
         }));
 
-        // Bounding Box
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
         rotatedCoords.forEach(p => {
             if(p.x < minX) minX = p.x;
@@ -207,9 +200,6 @@ export const generateGridWaypoints = (
             if(p.y > maxY) maxY = p.y;
         });
 
-        const gridPointsMetric: {x: number, y: number}[] = [];
-        
-        // Helper intersection
         const getIntersection = (y: number, p1: {x:number, y:number}, p2: {x:number, y:number}) => {
             if ((p1.y > y && p2.y > y) || (p1.y < y && p2.y < y)) return null;
             if (p1.y === p2.y) return null; 
@@ -218,143 +208,163 @@ export const generateGridWaypoints = (
             return { x, y };
         };
 
-        let lineIndex = 0;
-        let currentY = minY + (laneSpacing / 2);
-
-        while (currentY < maxY) {
+        const finalMetric: {x: number, y: number, isEffort: boolean}[] = [];
+        let curY = minY + (laneSpacing / 2);
+        let lIdx = 0;
+        while (curY < maxY) {
             const intersections = [];
             for (let i = 0; i < rotatedCoords.length; i++) {
                 const p1 = rotatedCoords[i];
                 const p2 = rotatedCoords[(i + 1) % rotatedCoords.length];
-                const inter = getIntersection(currentY, p1, p2);
+                const inter = getIntersection(curY, p1, p2);
                 if (inter) intersections.push(inter);
             }
-
             intersections.sort((a, b) => a.x - b.x);
-
             for (let i = 0; i < intersections.length - 1; i += 2) {
-                const pStart = intersections[i];
-                const pEnd = intersections[i+1];
-                const lineLen = pEnd.x - pStart.x;
-                const segmentPoints = [pStart];
-
-                if (photoSpacing > 0 && lineLen > photoSpacing) {
-                    const numPhotos = Math.floor(lineLen / photoSpacing);
-                    for (let k = 1; k <= numPhotos; k++) {
-                         const ratio = k * photoSpacing / lineLen;
-                         const x = pStart.x + (pEnd.x - pStart.x) * ratio;
-                         segmentPoints.push({ x, y: currentY });
-                    }
-                }
+                const pS = intersections[i];
+                const pE = intersections[i+1];
+                let lineWps = [{...pS, isEffort: true}, {...pE, isEffort: true}];
+                if (lIdx % 2 !== 0) lineWps.reverse();
                 
-                segmentPoints.push(pEnd);
-                if (lineIndex % 2 !== 0) segmentPoints.reverse();
-                gridPointsMetric.push(...segmentPoints);
+                if (finalMetric.length > 0) {
+                    const connector = {...lineWps[0], isEffort: false};
+                    finalMetric.push(connector);
+                    finalMetric.push({...lineWps[0], isEffort: true});
+                    finalMetric.push({...lineWps[1], isEffort: true});
+                } else {
+                    finalMetric.push(lineWps[0]);
+                    finalMetric.push(lineWps[1]);
+                }
             }
-            currentY += laneSpacing;
-            lineIndex++;
+            curY += laneSpacing;
+            lIdx++;
         }
 
-        // Un-Rotate and Project Back
-        const revRad = toRad(angle);
-        const revCos = Math.cos(revRad);
-        const revSin = Math.sin(revRad);
-
-        return gridPointsMetric.map(p => {
-            const xRot = p.x * revCos - p.y * revSin;
-            const yRot = p.x * revSin + p.y * revCos;
-            return projectFromLocalCartesian(xRot, yRot, centerLat, centerLng);
+        return finalMetric.map(p => {
+            const revRadVal = toRad(angle);
+            const xRot = p.x * Math.cos(revRadVal) - p.y * Math.sin(revRadVal);
+            const yRot = p.x * Math.sin(revRadVal) + p.y * Math.cos(revRadVal);
+            const ll = projectFromLocalCartesian(xRot, yRot, centerLat, centerLng);
+            return { ...ll, isEffort: p.isEffort };
         });
     };
 
-    // Main Logic for Parallel or Cross Hatch
     let finalPoints = generatePass(rotationAngle);
-
     if (settings.mappingPattern === 'crosshatch') {
         const pass2 = generatePass(rotationAngle + 90);
-        finalPoints = [...finalPoints, ...pass2];
+        if (finalPoints.length > 0 && pass2.length > 0) {
+            const connector = { ...pass2[0], isEffort: false };
+            finalPoints = [...finalPoints, connector, ...pass2];
+        } else {
+            finalPoints = [...finalPoints, ...pass2];
+        }
     }
 
-    if (finalPoints.length === 0) return polygonCoords.map(p => ({lat: p.lat, lng: p.lng}));
-
+    if (finalPoints.length === 0) return polygonCoords.map(p => ({lat: p.lat, lng: p.lng, isEffort: true}));
     return finalPoints;
 };
 
-/**
- * Calculates Flight Statistics
- */
 export const estimateRouteStats = (routes: Route[], settings: FlightSettings, filterId: string | 'all'): RouteStats => {
     let totalDist = 0;
-    let totalTime = 0;
+    let totalTime = 0; 
     let photoCount = 0;
     let videoCount = 0;
+    let batteryCount = 0;
+    const swapPoints: { lat: number, lng: number, wpId: number, wpIndex: number }[] = [];
 
     const routesToCalc = filterId === 'all' ? routes : routes.filter(r => r.id === filterId);
+
+    const speedMs = settings.speedKmh / 3.6;
+    const maxTimeSec = settings.maxFlightTimeMinutes * 60;
+    const safetyMarginDecimal = settings.batterySafetyMargin / 100;
+    const effectiveTimeSec = maxTimeSec * (1 - safetyMarginDecimal);
 
     routesToCalc.forEach(route => {
         if (route.waypoints.length === 0) return;
 
-        // 1. Commute (Home -> WP1)
         const home = route.homePoint;
-        const wp1 = route.waypoints[0];
-        const commuteDist = calculateDistance(home.lat, home.lng, wp1.latitude, wp1.longitude);
-        totalDist += commuteDist;
+        let currentBatteryTime = 0;
+        let routeBatteryCount = 1;
 
-        // 2. Route Path
+        const wp1 = route.waypoints[0];
+        const initialCommuteDist = calculateDistance(home.lat, home.lng, wp1.latitude, wp1.longitude);
+        const initialCommuteTime = initialCommuteDist / speedMs;
+        
+        currentBatteryTime += initialCommuteTime;
+        totalDist += initialCommuteDist;
+
         for (let i = 0; i < route.waypoints.length - 1; i++) {
             const w1 = route.waypoints[i];
             const w2 = route.waypoints[i+1];
             const segDist = calculateDistance(w1.latitude, w1.longitude, w2.latitude, w2.longitude);
-            totalDist += segDist;
-
-            // Action Delays
-            if (w1.actionType1 === 0) totalTime += (w1.actionParam1 / 1000); // ms -> s ? Litchi param is usually ms
-            // Simple assumption: Action param 1 is seconds for STAY
-            if (w1.actionType1 === 0) totalTime += (w1.actionParam1); 
+            const segTime = segDist / speedMs;
             
-            // Photo Count (Action 1)
+            let actionDelay = 0;
+            if (w1.actionType1 === 0) actionDelay += (w1.actionParam1); 
             if (w1.actionType1 === 1) photoCount++;
-            // Video Count (Action 2)
             if (w1.actionType1 === 2) videoCount++;
+
+            const distToHomeFromNext = calculateDistance(w2.latitude, w2.longitude, home.lat, home.lng);
+            const timeToHomeFromNext = distToHomeFromNext / speedMs;
+
+            // Se o tempo atual + este trecho + delay de ação + tempo de voltar ao home exceder o limite
+            if (currentBatteryTime + segTime + actionDelay + timeToHomeFromNext > effectiveTimeSec) {
+                const distToHome = calculateDistance(w1.latitude, w1.longitude, home.lat, home.lng);
+                const timeToHome = distToHome / speedMs;
+                
+                totalDist += distToHome; 
+                totalTime += timeToHome;
+                
+                routeBatteryCount++;
+                
+                // Registra o ID do waypoint atual como o ponto de swap
+                // (O drone finaliza a ação no WP atual e volta pro Home)
+                swapPoints.push({ 
+                    lat: w1.latitude, 
+                    lng: w1.longitude, 
+                    wpId: w1.id,
+                    wpIndex: i
+                });
+
+                const distFromHomeToResume = calculateDistance(home.lat, home.lng, w1.latitude, w1.longitude);
+                currentBatteryTime = distFromHomeToResume / speedMs;
+                totalDist += distFromHomeToResume;
+            }
+
+            currentBatteryTime += (segTime + actionDelay);
+            totalDist += segDist;
+            totalTime += (segTime + actionDelay);
         }
-        
-        // Last point action
+
         const lastWp = route.waypoints[route.waypoints.length - 1];
         if (lastWp.actionType1 === 1) photoCount++;
-
-        // 3. Return (Last WP -> Home) if RTH
-        if (settings.finishAction === 1) { // RTH
-            const returnDist = calculateDistance(lastWp.latitude, lastWp.longitude, home.lat, home.lng);
-            totalDist += returnDist;
-        }
-
-        // 4. Mapping Interval Photos Estimation (Litchi Interval)
+        
+        const finalReturnDist = calculateDistance(lastWp.latitude, lastWp.longitude, home.lat, home.lng);
+        const finalReturnTime = finalReturnDist / speedMs;
+        totalDist += finalReturnDist;
+        totalTime += finalReturnTime;
+        
+        batteryCount += routeBatteryCount;
+        
         const interval = route.waypoints[0].photoTimeInterval;
         if (interval > 0) {
-            // Estimate based on time
             let routePathLen = 0;
-             for (let i = 0; i < route.waypoints.length - 1; i++) {
+            for (let i = 0; i < route.waypoints.length - 1; i++) {
                 const w1 = route.waypoints[i];
                 const w2 = route.waypoints[i+1];
                 routePathLen += calculateDistance(w1.latitude, w1.longitude, w2.latitude, w2.longitude);
-             }
-             const speedMs = route.waypoints[0].speed > 0 ? route.waypoints[0].speed : (settings.speedKmh/3.6);
-             const pathTime = routePathLen / speedMs;
-             photoCount += Math.floor(pathTime / interval);
+            }
+            const pathTime = routePathLen / speedMs;
+            photoCount += Math.floor(pathTime / interval);
         }
     });
-
-    // Total Time = Distance / Speed
-    // Average speed from settings
-    const speedMs = settings.speedKmh / 3.6;
-    if (speedMs > 0) {
-        totalTime += (totalDist / speedMs);
-    }
 
     return {
         totalDistance: totalDist,
         totalTimeMinutes: totalTime / 60,
         photoCount,
-        videoCount
+        videoCount,
+        batteryCount,
+        swapPoints
     };
 };

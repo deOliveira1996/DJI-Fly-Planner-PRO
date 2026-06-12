@@ -17,7 +17,6 @@ const PROJECT_PREFIX = 'litchi_project_';
 
 type ActiveTab = 'map' | 'manager' | 'calculator' | 'instructions';
 
-// Toast Notification Interface
 interface Notification {
     id: number;
     message: string;
@@ -28,8 +27,7 @@ const App: React.FC = () => {
   const [routes, setRoutes] = useState<Route[]>([]);
   const [settings, setSettings] = useState<FlightSettings>(DEFAULT_SETTINGS);
   
-  // Stats
-  const [stats, setStats] = useState<RouteStats>({ totalDistance: 0, totalTimeMinutes: 0, photoCount: 0, videoCount: 0 });
+  const [stats, setStats] = useState<RouteStats>({ totalDistance: 0, totalTimeMinutes: 0, photoCount: 0, videoCount: 0, batteryCount: 1, swapPoints: [] });
   const [selectedStatsRouteId, setSelectedStatsRouteId] = useState<string | 'all'>('all');
   
   const [isLoading, setIsLoading] = useState(false);
@@ -38,38 +36,32 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('map');
   const [notification, setNotification] = useState<Notification | null>(null);
   
-  // Visual Tool States
   const [measureMode, setMeasureMode] = useState(false);
   const [speedUnit, setSpeedUnit] = useState<SpeedUnit>('kmh');
   
-  // Language
   const [language, setLanguage] = useState<Language>('en');
 
-  // Rename Modal State
   const [renameModal, setRenameModal] = useState<{ isOpen: boolean; routeId: string | null; currentName: string; }>({
       isOpen: false,
       routeId: null,
       currentName: ''
   });
 
-  // Helper: Show Notification
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
       setNotification({ id: Date.now(), message, type });
       setTimeout(() => setNotification(null), 3000);
   };
 
-  // --- Logic 0: Persistence (Project Management) ---
   useEffect(() => {
     const keys = Object.keys(localStorage).filter(k => k.startsWith(PROJECT_PREFIX));
     const names = keys.map(k => k.replace(PROJECT_PREFIX, ''));
     setSavedProjects(names);
   }, []);
 
-  // Update Stats whenever Routes or HomePoint changes
   useEffect(() => {
     const newStats = estimateRouteStats(routes, settings, selectedStatsRouteId);
     setStats(newStats);
-  }, [routes, settings.speedKmh, settings.finishAction, selectedStatsRouteId]);
+  }, [routes, settings, selectedStatsRouteId]);
 
   const saveProject = (name: string) => {
     try {
@@ -109,7 +101,6 @@ const App: React.FC = () => {
     }
   };
 
-  // --- Logic 1: Lock Mechanism ---
   const toggleRouteLock = (id: string) => {
     setRoutes(prev => prev.map(r => {
       if (r.id === id) {
@@ -119,14 +110,12 @@ const App: React.FC = () => {
     }));
   };
 
-  // --- Logic 2: Apply Settings to Routes ---
   const applySettingsToRoutes = useCallback(() => {
     let updatedCount = 0;
     let lockedCount = 0;
 
     setRoutes(currentRoutes => {
       const newRoutes = currentRoutes.map(route => {
-        // Skip locked routes
         if (route.locked) {
             lockedCount++;
             return route;
@@ -134,47 +123,39 @@ const App: React.FC = () => {
 
         updatedCount++;
 
-        // Regenerate grid if it's a mapping route
         let currentWaypoints = route.waypoints;
 
-        // CRITICAL FIX: Use originalPolygon to regenerate grid so shape doesn't collapse
         if (settings.flightMode === 'mapping' && route.gridRotation !== undefined && route.originalPolygon) {
              const newGridCoords = generateGridWaypoints(route.originalPolygon, settings, route.gridRotation);
              
-             // Rebuild waypoints
              currentWaypoints = newGridCoords.map((c, idx) => ({
-                ...route.waypoints[0], // Inherit base properties
+                ...route.waypoints[0], 
                 id: idx + 1,
                 latitude: c.lat,
                 longitude: c.lng,
-                actionType1: 1, // Force Photo
-                gimbalPitch: -90, // Force Nadir
+                actionType1: 1, 
+                gimbalPitch: -90, 
                 heading: 0,
-                altitude: settings.altitude // Enforce altitude
+                altitude: settings.altitude 
              }));
         }
 
-        // 1. Basic settings application
         let updatedWaypoints = currentWaypoints.map(wp => ({
           ...wp,
           altitude: settings.altitude,
           speed: parseFloat((settings.speedKmh / 3.6).toFixed(2)),
           curveSize: settings.curveSize,
           gimbalMode: settings.gimbalMode,
-          // Only overwrite gimbal/action if not mapping mode, or explicit overwrite desired
-          // For mapping, we usually want -90 and Photo
           gimbalPitch: settings.flightMode === 'mapping' ? -90 : settings.gimbalPitch,
           altitudeMode: settings.altitudeMode,
           actionType1: settings.flightMode === 'mapping' ? 1 : settings.action1,
         }));
 
-        // 2. Heading Logic
         if (settings.headingMode === 'auto_bearing') {
            updatedWaypoints = updateWaypointsWithBearings(updatedWaypoints);
         } else if (settings.headingMode === 'manual') {
            updatedWaypoints = updatedWaypoints.map(wp => ({ ...wp, heading: settings.headingManual }));
         } else {
-           // Auto Path usually implies heading 0 (Litchi standard)
            updatedWaypoints = updatedWaypoints.map(wp => ({ ...wp, heading: 0 }));
         }
 
@@ -183,7 +164,6 @@ const App: React.FC = () => {
       return newRoutes;
     });
 
-    // Notify user
     if (lockedCount > 0) {
         showToast(`Settings applied to ${updatedCount} routes. (${lockedCount} locked skipped)`, 'info');
     } else {
@@ -193,11 +173,9 @@ const App: React.FC = () => {
   }, [settings]);
 
 
-  // --- Logic 3: Optimized Multi-file Import ---
   const handleImport = async (files: FileList) => {
     setIsLoading(true);
     
-    // Create an array of promises for parallel processing
     const fileArray = Array.from(files);
     
     const importPromises = fileArray.map(async (file) => {
@@ -217,7 +195,6 @@ const App: React.FC = () => {
           }
         } else if (ext === 'kml') {
           const kmlRoutes = await parseKML(file);
-          // ensure home point is set
           return kmlRoutes.map(r => ({
               ...r, 
               locked: false,
@@ -233,8 +210,6 @@ const App: React.FC = () => {
 
     try {
         const results = await Promise.all(importPromises);
-        
-        // Flatten array and filter out nulls
         const validNewRoutes = results.flat().filter((r): r is Route => r !== null);
 
         if (validNewRoutes.length > 0) {
@@ -252,11 +227,8 @@ const App: React.FC = () => {
     }
   };
 
-  // --- Logic 4: Handle Drawing ---
   const handleRouteCreated = (coords: { lat: number, lng: number }[]) => {
-    // If in Mapping Mode, default action is Take Photo (1)
     const defaultAction = settings.flightMode === 'mapping' ? 1 : settings.action1;
-    // If in Mapping Mode, default Gimbal Pitch is -90
     const defaultGimbal = settings.flightMode === 'mapping' ? -90 : settings.gimbalPitch;
 
     const newWaypoints: Waypoint[] = coords.map((c, idx) => ({
@@ -298,7 +270,6 @@ const App: React.FC = () => {
       locked: false,
       homePoint: { lat: finalWps[0].latitude - 0.0001, lng: finalWps[0].longitude },
       gridRotation: settings.flightMode === 'mapping' ? 0 : undefined,
-      // Persist original polygon if it's a mapping grid
       originalPolygon: settings.flightMode === 'mapping' ? coords : undefined
     };
 
@@ -306,8 +277,6 @@ const App: React.FC = () => {
     showToast('New route created from drawing.', 'success');
   };
 
-  // --- Logic 5: Editing Logic ---
-  
   const handleOpenRenameModal = (id: string, currentName: string) => {
       setRenameModal({ isOpen: true, routeId: id, currentName });
   };
@@ -359,24 +328,20 @@ const App: React.FC = () => {
       setRoutes(prev => prev.map(r => r.id === routeId ? { ...r, homePoint: { lat, lng } } : r));
   };
   
-  // Handle Grid Rotation
   const handleRotationUpdate = (routeId: string, angle: number) => {
       setRoutes(prev => prev.map(route => {
           if (route.id !== routeId || route.locked) return route;
-          
-          // Use ORIGINAL POLYGON for rotation to avoid shape collapse
           const basePolygon = route.originalPolygon;
-          
           if (!basePolygon) return { ...route, gridRotation: angle };
 
           const newGridCoords = generateGridWaypoints(basePolygon, settings, angle);
           
           const newWps: Waypoint[] = newGridCoords.map((c, idx) => ({
-             ...route.waypoints[0], // Copy props from first
+             ...route.waypoints[0], 
              id: idx + 1,
              latitude: c.lat,
              longitude: c.lng,
-             actionType1: 1, // Force Photo for grid points
+             actionType1: 1, 
              gimbalPitch: -90,
              altitude: settings.altitude
           }));
@@ -403,9 +368,7 @@ const App: React.FC = () => {
   const handleDeleteWaypoint = (routeId: string, wpId: number) => {
       setRoutes(prev => prev.map(route => {
           if (route.id !== routeId || route.locked) return route;
-          
           const filtered = route.waypoints.filter(wp => wp.id !== wpId);
-          
           let finalWps = filtered;
           if (settings.headingMode === 'auto_bearing') {
              finalWps = updateWaypointsWithBearings(filtered);
@@ -417,10 +380,8 @@ const App: React.FC = () => {
   const handleReorderWaypoint = (routeId: string, wpId: number, direction: 'up' | 'down') => {
       setRoutes(prev => prev.map(route => {
           if (route.id !== routeId || route.locked) return route;
-          
           const index = route.waypoints.findIndex(wp => wp.id === wpId);
           if (index === -1) return route;
-          
           const newWps = [...route.waypoints];
           if (direction === 'up' && index > 0) {
               [newWps[index], newWps[index - 1]] = [newWps[index - 1], newWps[index]];
@@ -429,12 +390,10 @@ const App: React.FC = () => {
           } else {
               return route;
           }
-          
           let finalWps = newWps;
           if (settings.headingMode === 'auto_bearing') {
              finalWps = updateWaypointsWithBearings(newWps);
           }
-
           return { ...route, waypoints: finalWps };
       }));
   };
@@ -468,11 +427,10 @@ const App: React.FC = () => {
         onImport={handleImport}
         onExportLitchi={() => exportLitchiZip(routes)}
         onExportKML={() => exportDJIKMLZip(routes)}
-        onExportWPML={() => exportDJIWPML(routes)}
+        onExportWPML={() => exportDJIWPML(routes, settings)}
         onClearRoutes={() => { setRoutes([]); showToast('All routes cleared.', 'info'); }}
         onApplySettings={applySettingsToRoutes}
         onPromptRename={handleOpenRenameModal}
-        onRenameRoute={() => {}} 
         onDeleteRoute={handleDeleteRoute}
         onToggleLock={toggleRouteLock}
         onUndo={handleUndo}
@@ -490,7 +448,6 @@ const App: React.FC = () => {
       
       <main className="flex-1 flex flex-col relative bg-slate-50">
         
-        {/* Tab Navigation */}
         <div className="bg-white border-b border-slate-200 px-4 flex items-center justify-between shadow-sm z-30 h-12">
             <div className="flex space-x-1">
                 <button 
@@ -526,7 +483,6 @@ const App: React.FC = () => {
             )}
         </div>
 
-        {/* Content Area */}
         <div className="flex-1 relative overflow-hidden">
             {isLoading && (
             <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center text-white">
@@ -548,8 +504,8 @@ const App: React.FC = () => {
                         onRotationUpdate={handleRotationUpdate}
                         speedUnit={speedUnit}
                         language={language}
+                        stats={stats}
                     />
-                    {/* Quick Guide Overlay - Only show if user hasn't closed it */}
                     {showInstructions && (
                         <div className="absolute top-4 right-4 z-[1000] bg-white/95 p-3 rounded shadow-md text-xs max-w-xs border border-slate-200 backdrop-blur-sm">
                             <div className="flex justify-between items-center mb-2 pb-1 border-b border-slate-100">
@@ -578,10 +534,11 @@ const App: React.FC = () => {
             {activeTab === 'manager' && (
                 <RouteManager 
                     routes={routes} 
+                    stats={stats}
                     onUpdateWaypoint={handleDetailedUpdate} 
                     onDeleteWaypoint={handleDeleteWaypoint}
                     onReorderWaypoint={handleReorderWaypoint}
-                    onRenameRoute={() => {}} // Handled by PromptRename
+                    onRenameRoute={() => {}} 
                     onPromptRename={handleOpenRenameModal}
                     speedUnit={speedUnit}
                     language={language}
@@ -597,7 +554,6 @@ const App: React.FC = () => {
             )}
         </div>
 
-        {/* Global Toast Notification */}
         {notification && (
             <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-3 rounded-lg shadow-2xl z-50 flex items-center gap-3 transition-all animate-in fade-in slide-in-from-bottom-5 duration-300 border ${
                 notification.type === 'error' ? 'bg-red-600 border-red-700 text-white' : 
@@ -610,7 +566,6 @@ const App: React.FC = () => {
             </div>
         )}
 
-        {/* Rename Modal */}
         {renameModal.isOpen && (
              <div className="fixed inset-0 z-[2000] bg-black/50 flex items-center justify-center p-4">
                  <div className="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden">

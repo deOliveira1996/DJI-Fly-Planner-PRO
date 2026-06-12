@@ -1,11 +1,10 @@
 
-
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { CalculatorResult, DronePreset, DRONE_PRESETS } from '../types';
 import html2canvas from 'html2canvas';
-import { Download, Calculator as CalcIcon, Check, Camera, Ruler, Clock, Layers, Gauge } from 'lucide-react';
+import { Download, Calculator as CalcIcon, Check, Camera, Ruler, Clock, Layers, Gauge, AlertTriangle } from 'lucide-react';
 import { t, Language } from '../translations';
-import { calculateGSD } from '../services/geometryService';
+import { calculateGSD, calculateRollingShutterDelta } from '../services/geometryService';
 
 interface CalculatorProps {
     language: Language;
@@ -23,6 +22,7 @@ const SHUTTER_SPEEDS = [
     { label: "1/1250", val: 1/1250 },
     { label: "1/1600", val: 1/1600 },
     { label: "1/2000", val: 1/2000 },
+    { label: "1/4000", val: 1/4000 },
     { label: "1/8000", val: 1/8000 },
 ];
 
@@ -93,119 +93,166 @@ export const Calculator: React.FC<CalculatorProps> = ({ language }) => {
     // Logic state
     const [altitude, setAltitude] = useState(80);
     const [velocity, setVelocity] = useState(25);
-    const [fovH, setFovH] = useState(82.1);
-    const [fovV, setFovV] = useState(49.4);
+    const [fovH, setFovH] = useState(69.7);
+    const [fovV, setFovV] = useState(55.1);
+    const [fovDiagonal, setFovDiagonal] = useState(82.1);
+    const [aspectRatio, setAspectRatio] = useState<'4:3' | '16:9'>('4:3');
     
     // Photogrammetry Extras
-    const [sensorW, setSensorW] = useState(9.84);
-    const [sensorH, setSensorH] = useState(7.38);
-    const [imageW, setImageW] = useState(8064);
-    const [imageH, setImageH] = useState(6048);
-    const [realFocal, setRealFocal] = useState(6.72);
+    const [sensorW, setSensorW] = useState(13.2);
+    const [sensorH, setSensorH] = useState(8.8);
+    const [imageW, setImageW] = useState(5472);
+    const [imageH, setImageH] = useState(3648);
+    const [realFocal, setRealFocal] = useState(9.1561);
     
     const [calcMode, setCalcMode] = useState<'angle' | 'base'>('angle');
     const [gimbalAngle, setGimbalAngle] = useState(-90);
     const [baseMajor, setBaseMajor] = useState(100);
-    const [distFrontal, setDistFrontal] = useState<number>(0); // 0 means calculate automatically
+    const [distFrontal, setDistFrontal] = useState<number>(0); 
     const [distTotal, setDistTotal] = useState<number>(0);
     
     // Mapping specific
-    const [overlapH, setOverlapH] = useState(70); // Side
-    const [overlapV, setOverlapV] = useState(80); // Front
+    const [overlapH, setOverlapH] = useState(60); 
+    const [overlapV, setOverlapV] = useState(70); 
     const [shutterSpeed, setShutterSpeed] = useState(1/1000);
 
     const [selectedPresetName, setSelectedPresetName] = useState<string | null>(null);
+    const [eisCropActive, setEisCropActive] = useState(false);
+    const [keystoneK, setKeystoneK] = useState(1.0);
     
     const [result, setResult] = useState<CalculatorResult | null>(null);
     const [mappingResult, setMappingResult] = useState<any | null>(null);
     const chartRef = useRef<HTMLDivElement>(null);
 
-    // High Contrast Input Style - Bright White
+    // High Contrast Input Style
     const inputClass = "w-full bg-white text-gray-900 border-gray-300 rounded p-2 border focus:ring-2 focus:ring-blue-500 outline-none text-xs";
     const labelClass = "block text-[10px] uppercase font-bold text-slate-600 mb-1";
 
     const handleCalculate = () => {
-        // --- 1. Sweep Area Calculation ---
-        const fovVRad = (fovV * Math.PI) / 180;
-        const fovHRad = (fovH * Math.PI) / 180;
-        
-        let calculatedGimbal = gimbalAngle;
-        let calculatedBaseMajor = baseMajor;
-        let calculatedBaseMinor = 0;
-        let dNear = 0;
-        let dFar = 0;
+        // FOV Calculation based on user example
+        const aspectHoriz = aspectRatio === '4:3' ? 4 : 16;
+        const aspectVert = aspectRatio === '4:3' ? 3 : 9;
+        const aspectDiag = Math.sqrt(aspectHoriz * aspectHoriz + aspectVert * aspectVert);
 
-        if (calcMode === 'angle') {
-            const theta = Math.abs(gimbalAngle);
-            dNear = altitude * Math.tan((90 - theta) * Math.PI / 180 - fovVRad / 2);
-            dFar = altitude * Math.tan((90 - theta) * Math.PI / 180 + fovVRad / 2);
-            calculatedBaseMinor = 2 * dNear * Math.tan(fovHRad / 2);
-            calculatedBaseMajor = 2 * dFar * Math.tan(fovHRad / 2);
-        } else {
-            // Calculate via Base Major
-            dFar = baseMajor / (2 * Math.tan(fovHRad / 2));
-            const thetaRad = Math.PI / 2 - ((Math.atan(dFar / altitude) - fovVRad / 2));
-            const theta = thetaRad * 180 / Math.PI;
-            
-            dNear = altitude * Math.tan((90 - theta) * Math.PI / 180 - fovVRad / 2);
-            calculatedBaseMinor = 2 * dNear * Math.tan(fovHRad / 2);
-            calculatedGimbal = parseFloat((theta * -1).toFixed(2));
-            calculatedBaseMajor = baseMajor;
+        const diagRad = (fovDiagonal * Math.PI) / 180;
+        
+        // HFOV = 2 * atan( (aspect_horiz / aspect_diag) * tan(fov_diag / 2) )
+        let hfovRad = 2 * Math.atan((aspectHoriz / aspectDiag) * Math.tan(diagRad / 2));
+        
+        // VFOV = 2 * atan( (aspect_vert / aspect_diag) * tan(fov_diag / 2) )
+        let vfovRad = 2 * Math.atan((aspectVert / aspectDiag) * Math.tan(diagRad / 2));
+
+        if (eisCropActive) {
+            // Apply crop for electronic stabilization (EIS / RockSteady)
+            // User example: DJI Mini 4 Pro VFOV 43.1 -> 35 (~18.8% reduction)
+            const cropMultiplier = 35 / 43.1;
+            hfovRad *= cropMultiplier;
+            vfovRad *= cropMultiplier;
         }
 
-        const geometricLen = Math.abs(dFar - dNear);
-        // Use user distFrontal if provided (and not 0), else use geometric length
-        const lenForTime = distFrontal > 0 ? distFrontal : geometricLen;
+        // Geometric Projection (Trapezoid)
+        // User example: gimbal -33 deg (rel to horizontal) -> alpha = 57 deg (rel to nadir)
+        // Our gimbalAngle is -90 for Nadir. So 0 relative to horizontal is 0. 
+        // Angle relative to nadir alpha = 90 - abs(gimbalAngle)
+        const alphaRad = (90 - Math.abs(gimbalAngle)) * (Math.PI / 180);
+        
+        const halfVfovRad = vfovRad / 2;
+        const halfHfovRad = hfovRad / 2;
+
+        const theta1Rad = alphaRad - halfVfovRad;
+        const theta2Rad = alphaRad + halfVfovRad;
+
+        // Limite próximo e distante no solo (Distância do Projeção Nadir até o ponto)
+        const dNear = altitude * Math.tan(theta1Rad);
+        const dFar = altitude * Math.tan(theta2Rad);
+        
+        // Altura do trapézio (Extensão Longitudinal) - Aplicando Fator de Correção Keystone K
+        const gh_pure = Math.abs(dFar - dNear);
+        const gh = gh_pure * keystoneK;
+
+        // Distâncias hipotenusa (Slant Ranges)
+        const sNear = altitude / Math.cos(theta1Rad);
+        const sFar = altitude / Math.cos(theta2Rad);
+
+        // Larguras Transversais (Widths) baseadas na fórmula do usuário: W = 2 * h_hypot * sin(FOV_h / 2)
+        // O usuário solicitou que o erro se propaga em toda a imagem, então aplicamos K a todas as dimensões.
+        const wNear = 2 * sNear * Math.sin(halfHfovRad) * keystoneK;
+        const wFar = 2 * sFar * Math.sin(halfHfovRad) * keystoneK;
+
+        // Centro da imagem - Ajustado proporcionalmente
+        const dCenter_pure = altitude / Math.cos(alphaRad);
+        const dCenter = dCenter_pure * Math.sqrt(keystoneK); // Média geométrica para ajuste de distância
+        const wCenter = 2 * dCenter_pure * Math.sin(halfHfovRad) * keystoneK;
+
+        const area = gh === Infinity ? Infinity : ((wNear + wFar) / 2) * gh;
         const velMs = velocity / 3.6;
         
-        const timeFrontal = lenForTime / velMs;
+        const timeFrontal = gh === Infinity ? Infinity : gh / velMs;
         const timeTotal = distTotal > 0 ? distTotal / velMs : null;
+
+        const delta = calculateRollingShutterDelta(
+            velMs,
+            altitude,
+            realFocal,
+            imageH,
+            sensorH,
+            shutterSpeed
+        );
 
         setResult({
             altitude,
-            gimbalAngle: calculatedGimbal,
-            baseMin: Math.abs(calculatedBaseMinor),
-            baseMax: Math.abs(calculatedBaseMajor),
+            gimbalAngle: gimbalAngle,
+            baseMin: wNear,
+            baseMax: wFar,
             speed: `${velocity} km/h`,
-            distFrontal: lenForTime, // Use the effective length
-            timeFrontal: timeFrontal, // Seconds
+            distFrontal: gh,
+            timeFrontal: timeFrontal,
             distTotal: distTotal > 0 ? distTotal : null,
             timeTotal: timeTotal ? timeTotal / 60 : null,
             dNear,
-            dFar
+            dFar,
+            dCenter,
+            wCenter,
+            rollingShutterDelta: delta
         });
 
-        // --- 2. Metrics ---
-        
-        // Footprint (Ground Coverage of one photo at Nadir)
-        const footprintW = 2 * altitude * Math.tan(fovHRad / 2);
-        const footprintH = 2 * altitude * Math.tan(fovVRad / 2);
+        // O GSD deve refletir as dimensões corrigidas. 
+        // GSD = Dimensão Real / Dimensão em Pixels.
+        const gsdWCenter = (wCenter / imageW) * 100; // cm/px
+        const gsdHCenter = (gh / imageH) * 100; // cm/px
+        const gsdCenter = Math.max(gsdWCenter, gsdHCenter); 
 
-        // GSD (cm/px) - Using Fixed Formula from Service
-        const gsdW = calculateGSD(altitude, sensorW, imageW, realFocal);
-        const gsdH = calculateGSD(altitude, sensorH, imageH, realFocal);
-        const gsd = Math.max(gsdW, gsdH); 
+        const gsdWNear = (wNear / imageW) * 100; 
+        const gsdHNear = (gh / imageH) * (sNear/dCenter_pure) * 100; // Aproximação vertical
+        const gsdNear = Math.max(gsdWNear, gsdHNear); 
 
-        // Motion Blur (cm) = Speed (m/s) * Shutter (s) * 100
+        const gsdWFar = sFar === Infinity ? Infinity : (wFar / imageW) * 100;
+        const gsdHFar = sFar === Infinity ? Infinity : (gh / imageH) * (sFar/dCenter_pure) * 100;
+        const gsdFar = sFar === Infinity ? Infinity : Math.max(gsdWFar, gsdHFar); 
+
         const blurCm = velMs * shutterSpeed * 100;
 
-        // Intervals
-        const distBetweenPhotos = footprintH * (1 - (overlapV / 100)); // Front spacing
-        const distBetweenLines = footprintW * (1 - (overlapH / 100)); // Side spacing
+        const distBetweenPhotos = gh === Infinity ? 0 : gh * (1 - (overlapV / 100)); 
+        const distBetweenLines = wNear * (1 - (overlapH / 100)); 
         const timeBetweenPhotos = distBetweenPhotos / velMs;
 
         setMappingResult({
-            footprintW,
-            footprintH,
-            gsd,
+            footprintW: gh === Infinity ? Infinity : (wNear + wFar) / 2,
+            footprintH: gh,
+            area: area,
+            gsdCenter,
+            gsdNear,
+            gsdFar,
             blurCm,
             distBetweenPhotos,
             distBetweenLines,
-            timeBetweenPhotos
+            timeBetweenPhotos,
+            delta
         });
     };
 
     const handlePreset = (p: DronePreset) => {
+        setFovDiagonal(p.fovDiagonal);
         setFovH(p.fovH);
         setFovV(p.fovV);
         setSensorW(p.sensorWidthMm);
@@ -229,24 +276,43 @@ export const Calculator: React.FC<CalculatorProps> = ({ language }) => {
     };
 
     const svgConfig = useMemo(() => {
-        if (!result) return { viewBox: "0 0 100 100", path: "" };
-        const maxDim = Math.max(result.baseMax, result.distFrontal);
-        const margin = maxDim * 0.3;
-        const minX = -(result.baseMax / 2) - margin;
-        const maxX = (result.baseMax / 2) + margin;
+        if (!result) return { viewBox: "0 0 100 100", points: "" };
         
-        // Inverted: Top (Y=0) is Base Major, Bottom is Base Minor
-        const minY = -margin;
-        const maxY = result.distFrontal + margin;
+        // We want to show the footprint with Far edge at the TOP and Near edge at the BOTTOM
+        // This simulates a forward-looking perspective.
+        const h = result.distFrontal;
+        const b = result.baseMin;
+        const B = result.baseMax;
+
+        // Points (Y increases downwards in SVG):
+        // Far edge (Top): (-B/2, 0), (B/2, 0)
+        // Near edge (Bottom): (b/2, h), (-b/2, h)
+        const points = `-${B/2},0 ${B/2},0 ${b/2},${h} -${b/2},${h}`;
+
+        const maxDim = Math.max(B, h);
+        const marginX = B * 0.6; // Large margin for X to fit labels and rotation
+        const marginY = h * 0.4; // Margin for Y
+        
+        const minX = -(B / 2) - marginX;
+        const maxX = (B / 2) + marginX;
+        const minY = -marginY;
+        const maxY = h + marginY;
+        
         const width = maxX - minX;
         const height = maxY - minY;
 
         return {
             viewBox: `${minX} ${minY} ${width} ${height}`,
-            points: `-${result.baseMax/2},0 ${result.baseMax/2},0 ${result.baseMin/2},${result.distFrontal} -${result.baseMin/2},${result.distFrontal}`
+            points
         };
 
     }, [result]);
+
+    const getDeltaColor = (val: number) => {
+        if (val < 1.2) return 'text-emerald-500';
+        if (val < 2.0) return 'text-amber-500';
+        return 'text-red-500';
+    };
 
     return (
         <div className="p-6 h-full overflow-y-auto bg-slate-50 flex flex-col">
@@ -300,14 +366,47 @@ export const Calculator: React.FC<CalculatorProps> = ({ language }) => {
                                 </div>
                             </div>
 
-                            {/* Detailed Sensor Info */}
                             <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-100">
+                                <div className="col-span-2">
+                                    <label className={labelClass}>{t("aspect_ratio", language)}</label>
+                                    <div className="flex gap-2">
+                                        <button 
+                                            onClick={() => setAspectRatio('4:3')}
+                                            className={`flex-1 py-1 px-2 rounded text-[10px] font-bold border transition ${aspectRatio === '4:3' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                                        >
+                                            {t("mode_photo", language)}
+                                        </button>
+                                        <button 
+                                            onClick={() => setAspectRatio('16:9')}
+                                            className={`flex-1 py-1 px-2 rounded text-[10px] font-bold border transition ${aspectRatio === '16:9' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                                        >
+                                            {t("mode_video", language)}
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="col-span-2">
+                                    <label className={labelClass}>{t("fov_diagonal", language)}</label>
+                                    <NumericInput className={inputClass} value={fovDiagonal} onChange={setFovDiagonal} />
+                                </div>
                                 <div>
                                     <label className={labelClass}>{t("fov_h", language)}</label>
                                     <NumericInput className={inputClass} value={fovH} onChange={setFovH} />
                                 </div>
-                                <div>
-                                    <label className={labelClass}>{t("fov_v", language)}</label>
+                                <div className="col-span-2">
+                                    <div className="flex justify-between items-center mb-1">
+                                        <label className={labelClass}>{t("fov_v", language)}</label>
+                                        <button 
+                                            onClick={() => {
+                                                const hfovRad = (fovH * Math.PI) / 180;
+                                                const R = aspectRatio === '4:3' ? (4/3) : (16/9);
+                                                const calculatedFovV = (2 * Math.atan(Math.tan(hfovRad / 2) / R) * 180) / Math.PI;
+                                                setFovV(parseFloat(calculatedFovV.toFixed(2)));
+                                            }}
+                                            className="text-[9px] text-blue-600 hover:underline font-bold"
+                                        >
+                                            Auto-calc from HFOV
+                                        </button>
+                                    </div>
                                     <NumericInput className={inputClass} value={fovV} onChange={setFovV} />
                                 </div>
                                 <div>
@@ -321,6 +420,23 @@ export const Calculator: React.FC<CalculatorProps> = ({ language }) => {
                                 <div>
                                     <label className={labelClass}>{t("focal_len", language)} (mm)</label>
                                     <NumericInput className={inputClass} value={realFocal} onChange={setRealFocal} />
+                                </div>
+                                <div className="col-span-2 pt-3 border-t border-slate-100">
+                                    <label className="flex items-center gap-2 cursor-pointer group">
+                                        <div className={`w-10 h-5 rounded-full relative transition-colors ${eisCropActive ? 'bg-blue-600' : 'bg-slate-300'}`}>
+                                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${eisCropActive ? 'left-6' : 'left-1'}`} />
+                                        </div>
+                                        <input 
+                                            type="checkbox" 
+                                            className="hidden" 
+                                            checked={eisCropActive} 
+                                            onChange={() => setEisCropActive(!eisCropActive)} 
+                                        />
+                                        <span className="text-[10px] font-bold text-slate-700 uppercase">{t("eis_crop", language)}</span>
+                                    </label>
+                                    <p className="text-[9px] text-slate-400 mt-1 italic">
+                                        Reduz o FOV efetivo para estabilização RockSteady/EIS (~-19%).
+                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -347,6 +463,22 @@ export const Calculator: React.FC<CalculatorProps> = ({ language }) => {
                                     </select>
                                 </div>
                                 
+                                <div className="col-span-2 pt-2 border-t mt-2">
+                                    <div className="flex justify-between items-center mb-1">
+                                        <label className={labelClass}>{t("keystone_adj", language)}</label>
+                                        <button 
+                                            onClick={() => setKeystoneK(1.19)}
+                                            className="text-[9px] text-orange-600 hover:underline font-bold"
+                                        >
+                                            Set Recommended (1.19)
+                                        </button>
+                                    </div>
+                                    <NumericInput className={inputClass} value={keystoneK} onChange={setKeystoneK} min={0.5} max={3.0} />
+                                    <p className="text-[9px] text-slate-400 mt-1 italic">
+                                        {t("keystone_desc", language)}
+                                    </p>
+                                </div>
+
                                 <div className="col-span-2 pt-2 border-t mt-2">
                                      <div className="flex gap-4 mb-2">
                                         <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
@@ -377,38 +509,56 @@ export const Calculator: React.FC<CalculatorProps> = ({ language }) => {
                     {/* RIGHT COL: Results */}
                     <div className="lg:col-span-8 flex flex-col gap-6">
                         
-                        {/* RESULT CARD 1: PHOTOGRAMMETRY (GSD/BLUR) */}
+                        {/* RESULT CARD 1: PHOTOGRAMMETRY */}
                         {mappingResult && (
                             <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
                                 <div className="bg-slate-800 text-white p-3 px-4 flex justify-between items-center">
                                     <h3 className="font-bold flex items-center gap-2"><Camera size={18}/> {t("photo_quality", language)}</h3>
                                     <span className="text-xs font-mono bg-slate-700 px-2 py-1 rounded">Alt: {altitude}m | Speed: {velocity}km/h</span>
                                 </div>
-                                <div className="p-4 grid grid-cols-2 gap-6">
+                                <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-6">
                                     <div className="text-center">
                                         <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">{t("gsd", language)}</div>
-                                        <div className="text-3xl font-black text-blue-600">{mappingResult.gsd.toFixed(2)}</div>
-                                        <div className="text-xs text-slate-500 font-bold">cm/px</div>
+                                        <div className="text-3xl font-black text-blue-600">{mappingResult.gsdCenter.toFixed(2)}</div>
+                                        <div className="text-[9px] text-slate-500 font-bold mt-1">
+                                            Near: {mappingResult.gsdNear.toFixed(1)} | Far: {mappingResult.gsdFar === Infinity ? '∞' : mappingResult.gsdFar.toFixed(1)}
+                                        </div>
+                                    </div>
+                                    <div className="text-center border-l border-slate-100">
+                                        <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">{t("area_m2", language)}</div>
+                                        <div className="text-3xl font-black text-slate-800">
+                                            {mappingResult.area === Infinity ? '∞' : mappingResult.area.toFixed(0)}
+                                        </div>
+                                        <div className="text-xs text-slate-500 font-bold">m²</div>
+                                        {mappingResult.area === Infinity && <div className="text-[10px] text-amber-600 font-bold mt-1">Horizon Visible</div>}
                                     </div>
                                     <div className="text-center border-l border-slate-100">
                                         <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">{t("motion_blur", language)}</div>
-                                        <div className={`text-3xl font-black ${mappingResult.blurCm > mappingResult.gsd ? 'text-red-500' : 'text-emerald-500'}`}>
+                                        <div className={`text-3xl font-black ${mappingResult.blurCm > mappingResult.gsdCenter ? 'text-red-500' : 'text-emerald-500'}`}>
                                             {mappingResult.blurCm.toFixed(2)}
                                         </div>
                                         <div className="text-xs text-slate-500 font-bold">cm</div>
-                                        {mappingResult.blurCm > mappingResult.gsd && <div className="text-[10px] text-red-600 font-bold mt-1 bg-red-100 px-1 rounded inline-block">⚠️ BLUR &gt; GSD</div>}
+                                        {mappingResult.blurCm > mappingResult.gsdCenter && <div className="text-[10px] text-red-600 font-bold mt-1 bg-red-100 px-1 rounded inline-block">⚠️ BLUR &gt; GSD</div>}
+                                    </div>
+                                    <div className="text-center border-l border-slate-100">
+                                        <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">{t("rolling_shutter_delta", language)}</div>
+                                        <div className={`text-3xl font-black ${getDeltaColor(mappingResult.delta)}`}>
+                                            {mappingResult.delta.toFixed(2)}
+                                        </div>
+                                        <div className="text-xs text-slate-500 font-bold">Δ (Pixels)</div>
+                                        <div className="text-[9px] text-slate-400 mt-1">{t("delta_desc", language)}</div>
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                        {/* RESULT CARD 2: MAPPING GUIDELINES (INTERVALS) */}
+                        {/* RESULT CARD 2: MAPPING GUIDELINES */}
                         {mappingResult && (
                              <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 delay-100">
                                 <div className="bg-orange-50 border-b border-orange-100 p-3 px-4">
                                     <h3 className="font-bold flex items-center gap-2 text-orange-800"><Layers size={18}/> {t("mapping_guide", language)}</h3>
                                 </div>
-                                <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div className="p-4 grid grid-cols-2 md:grid-cols-5 gap-6">
                                      <div className="text-center">
                                         <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">{t("photo_interval_time", language)}</div>
                                         <div className="text-2xl font-black text-slate-700">{mappingResult.timeBetweenPhotos.toFixed(1)}</div>
@@ -424,6 +574,16 @@ export const Calculator: React.FC<CalculatorProps> = ({ language }) => {
                                         <div className="text-2xl font-black text-slate-700">{mappingResult.distBetweenLines.toFixed(1)}</div>
                                         <div className="text-xs text-slate-500 font-bold">meters</div>
                                     </div>
+                                    <div className="text-center border-l border-slate-100">
+                                        <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">{t("width_m", language)}</div>
+                                        <div className="text-2xl font-black text-slate-700">{mappingResult.footprintW.toFixed(1)}</div>
+                                        <div className="text-xs text-slate-500 font-bold">meters</div>
+                                    </div>
+                                    <div className="text-center border-l border-slate-100">
+                                        <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">{t("height_m", language)}</div>
+                                        <div className="text-2xl font-black text-slate-700">{mappingResult.footprintH.toFixed(1)}</div>
+                                        <div className="text-xs text-slate-500 font-bold">meters</div>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -435,9 +595,8 @@ export const Calculator: React.FC<CalculatorProps> = ({ language }) => {
                                     <div className="flex justify-between items-center p-3 border-b bg-slate-50 rounded-t-lg">
                                         <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2"><Ruler size={16}/> {t("visual_result", language)}</h3>
                                         <div className="flex gap-4">
-                                            {/* SCAN TIME DISPLAY */}
                                             <div className="bg-blue-600 text-white px-3 py-1 rounded text-xs font-bold flex items-center gap-2 shadow-sm">
-                                                <Clock size={14} /> {t("est_scan_time", language)} (H): {result.timeFrontal?.toFixed(1)}s
+                                                <Clock size={14} /> {t("est_scan_time", language)}: {result.timeFrontal?.toFixed(1)}s
                                             </div>
                                             <div className="text-right text-xs text-slate-600 self-center">
                                                 Gimbal: <strong>{result.gimbalAngle}°</strong>
@@ -456,61 +615,58 @@ export const Calculator: React.FC<CalculatorProps> = ({ language }) => {
                                                 points={svgConfig.points}
                                                 fill="rgba(59, 130, 246, 0.1)"
                                                 stroke="#2563eb"
-                                                strokeWidth={result.baseMax / 150}
+                                                strokeWidth={Math.max(result.baseMax, result.distFrontal) / 150}
                                             />
-                                            {/* Center line */}
                                             <line 
                                                 x1="0" y1="0" 
                                                 x2="0" y2={result.distFrontal} 
                                                 stroke="#94a3b8" 
-                                                strokeWidth={result.baseMax / 250}
-                                                strokeDasharray={`${result.baseMax/20}, ${result.baseMax/20}`}
+                                                strokeWidth={Math.max(result.baseMax, result.distFrontal) / 250}
+                                                strokeDasharray={`${Math.max(result.baseMax, result.distFrontal)/20}, ${Math.max(result.baseMax, result.distFrontal)/20}`}
                                             />
                                             
-                                            {/* Height Label */}
                                             <text 
-                                                x={(result.baseMax / 2) * 1.15} 
+                                                x={(result.baseMax / 2) * 1.1} 
                                                 y={result.distFrontal / 2} 
                                                 textAnchor="start" 
-                                                fontSize={Math.max(result.baseMax, result.distFrontal) * 0.04} 
+                                                fontSize={Math.max(result.baseMax, result.distFrontal) * 0.05} 
                                                 fontWeight="bold"
                                                 fill="#0f172a"
                                                 style={{ textShadow: '2px 2px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff' }}
                                             >
-                                                H: {result.distFrontal.toFixed(1)}m
+                                                Y: {result.distFrontal.toFixed(1)}m
                                             </text>
                                             
-                                            {/* Base Minor Label (Now at Bottom) */}
                                             <text 
                                                 x="0" 
-                                                y={result.distFrontal * 1.08} 
+                                                y={result.distFrontal * 1.15} 
                                                 textAnchor="middle" 
-                                                fontSize={Math.max(result.baseMax, result.distFrontal) * 0.035} 
+                                                fontSize={Math.max(result.baseMax, result.distFrontal) * 0.045} 
                                                 fill="#475569"
                                                 style={{ textShadow: '2px 2px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff' }}
                                             >
-                                                b: {result.baseMin.toFixed(1)}m
+                                                X (Near): {result.baseMin.toFixed(1)}m
                                             </text>
                                             
-                                            {/* Base Major Label (Now at Top) */}
                                             <text 
                                                 x="0" 
-                                                y={-result.distFrontal * 0.05} 
+                                                y={-result.distFrontal * 0.1} 
                                                 textAnchor="middle" 
-                                                fontSize={Math.max(result.baseMax, result.distFrontal) * 0.04} 
+                                                fontSize={Math.max(result.baseMax, result.distFrontal) * 0.05} 
                                                 fontWeight="bold"
                                                 fill="#1e293b"
                                                 style={{ textShadow: '2px 2px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff' }}
                                             >
-                                                B: {result.baseMax.toFixed(1)}m
+                                                X (Far): {result.baseMax.toFixed(1)}m
                                             </text>
                                         </svg>
                                     </div>
 
                                     <div className="p-3 bg-slate-50 border-t rounded-b-lg flex justify-between items-center">
                                         <div className="flex gap-4 text-xs font-mono text-slate-600">
-                                           <span>Near: {result.dNear.toFixed(0)}m</span>
-                                           <span>Far: {result.dFar.toFixed(0)}m</span>
+                                           <span>Near Edge: {result.dNear?.toFixed(0)}m</span>
+                                           <span>Center: {result.dCenter?.toFixed(0)}m</span>
+                                           <span>Far Edge: {result.dFar === Infinity ? '∞' : result.dFar?.toFixed(0)}m</span>
                                         </div>
                                         <button onClick={exportImage} className="flex items-center gap-2 text-xs text-blue-600 hover:text-blue-800 font-bold uppercase tracking-wider">
                                             <Download size={14} /> {t("save_image", language)}

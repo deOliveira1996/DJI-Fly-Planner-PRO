@@ -299,9 +299,27 @@ const mapFinishAction = (action: number): string => {
   }
 };
 
-const generateTemplateKml = (routeName: string, waypoints: Waypoint[]) => {
+const getDroneEnumValue = (model: string): number => {
+    const m = model.toLowerCase();
+    if (m.includes("mavic 3 enterprise") || m.includes("m3e")) return 68;
+    if (m.includes("mavic 3")) return 68; 
+    if (m.includes("matrice 30")) return 67;
+    if (m.includes("matrice 300")) return 60;
+    if (m.includes("matrice 350")) return 77;
+    if (m.includes("mini 4 pro")) return 83;
+    if (m.includes("mini 3 pro")) return 83;
+    if (m.includes("air 3")) return 82;
+    if (m.includes("phantom 4")) return 7;
+    if (m.includes("inspire 3")) return 74;
+    return 68; // Default to M3E
+};
+
+const generateTemplateKml = (routeName: string, waypoints: Waypoint[], settings: FlightSettings) => {
   const firstWp = waypoints[0];
-  const finishAction = mapFinishAction(1);
+  const finishAction = mapFinishAction(settings.finishAction);
+  const globalSpeed = settings.globalSpeedKmh ? parseFloat((settings.globalSpeedKmh / 3.6).toFixed(2)) : 5;
+  const rcLostAction = settings.signalLostAction === 'hover' ? 'hover' : (settings.signalLostAction === 'continue' ? 'continue' : 'goHome');
+  const droneEnum = getDroneEnumValue(settings.selectedDroneModel);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2" xmlns:wpml="http://www.dji.com/wpmz/1.0.2">
@@ -311,12 +329,12 @@ const generateTemplateKml = (routeName: string, waypoints: Waypoint[]) => {
     <wpml:missionConfig>
       <wpml:flyToWaylineMode>safely</wpml:flyToWaylineMode>
       <wpml:finishAction>${finishAction}</wpml:finishAction>
-      <wpml:exitOnRCLost>goHome</wpml:exitOnRCLost>
-      <wpml:executeRCLostAction>goHome</wpml:executeRCLostAction>
+      <wpml:exitOnRCLost>${rcLostAction}</wpml:exitOnRCLost>
+      <wpml:executeRCLostAction>${rcLostAction}</wpml:executeRCLostAction>
       <wpml:takeOffSecurityHeight>20</wpml:takeOffSecurityHeight>
-      <wpml:globalTransitionalSpeed>${firstWp.speed || 5}</wpml:globalTransitionalSpeed>
+      <wpml:globalTransitionalSpeed>${globalSpeed}</wpml:globalTransitionalSpeed>
       <wpml:droneInfo>
-        <wpml:droneEnumValue>68</wpml:droneEnumValue>
+        <wpml:droneEnumValue>${droneEnum}</wpml:droneEnumValue>
         <wpml:droneSubEnumValue>0</wpml:droneSubEnumValue>
       </wpml:droneInfo>
     </wpml:missionConfig>
@@ -324,14 +342,20 @@ const generateTemplateKml = (routeName: string, waypoints: Waypoint[]) => {
       <wpml:templateType>waypoint</wpml:templateType>
       <wpml:templateId>0</wpml:templateId>
       <wpml:waylineId>0</wpml:waylineId>
-      <wpml:autoFlightSpeed>${firstWp.speed || 5}</wpml:autoFlightSpeed>
+      <wpml:distanceLimitMode>noLimit</wpml:distanceLimitMode>
+      <wpml:autoFlightSpeed>${globalSpeed}</wpml:autoFlightSpeed>
       <wpml:executeHeightMode>WGS84</wpml:executeHeightMode>
     </Folder>
   </Document>
 </kml>`;
 };
 
-const generateWaylinesWpml = (routeName: string, waypoints: Waypoint[]) => {
+const generateWaylinesWpml = (routeName: string, waypoints: Waypoint[], settings: FlightSettings) => {
+  const finishAction = mapFinishAction(settings.finishAction);
+  const globalSpeed = settings.globalSpeedKmh ? parseFloat((settings.globalSpeedKmh / 3.6).toFixed(2)) : 5;
+  const rcLostAction = settings.signalLostAction === 'hover' ? 'hover' : (settings.signalLostAction === 'continue' ? 'continue' : 'goHome');
+  const droneEnum = getDroneEnumValue(settings.selectedDroneModel);
+
   let placemarks = '';
   
   waypoints.forEach((wp, index) => {
@@ -391,7 +415,7 @@ const generateWaylinesWpml = (routeName: string, waypoints: Waypoint[]) => {
         <wpml:waypointHeadingMode>${headingMode}</wpml:waypointHeadingMode>
         <wpml:waypointTurnMode>toPointAndStopWithDiscontinuity</wpml:waypointTurnMode>
         <wpml:useGlobalHeight>0</wpml:useGlobalHeight>
-        <wpml:useGlobalSpeed>1</wpml:useGlobalSpeed>
+        <wpml:useGlobalSpeed>0</wpml:useGlobalSpeed>
         <wpml:useGlobalTurnParam>0</wpml:useGlobalTurnParam>
         <wpml:useGlobalHeadingParam>0</wpml:useGlobalHeadingParam>
         <wpml:gimbalPitchAngle>${wp.gimbalPitch}</wpml:gimbalPitchAngle>
@@ -404,13 +428,13 @@ const generateWaylinesWpml = (routeName: string, waypoints: Waypoint[]) => {
   <Document>
     <wpml:missionConfig>
       <wpml:flyToWaylineMode>safely</wpml:flyToWaylineMode>
-      <wpml:finishAction>goHome</wpml:finishAction>
-      <wpml:exitOnRCLost>goHome</wpml:exitOnRCLost>
-      <wpml:executeRCLostAction>goHome</wpml:executeRCLostAction>
+      <wpml:finishAction>${finishAction}</wpml:finishAction>
+      <wpml:exitOnRCLost>${rcLostAction}</wpml:exitOnRCLost>
+      <wpml:executeRCLostAction>${rcLostAction}</wpml:executeRCLostAction>
       <wpml:takeOffSecurityHeight>20</wpml:takeOffSecurityHeight>
-      <wpml:globalTransitionalSpeed>10</wpml:globalTransitionalSpeed>
+      <wpml:globalTransitionalSpeed>${globalSpeed}</wpml:globalTransitionalSpeed>
       <wpml:droneInfo>
-        <wpml:droneEnumValue>68</wpml:droneEnumValue>
+        <wpml:droneEnumValue>${droneEnum}</wpml:droneEnumValue>
         <wpml:droneSubEnumValue>0</wpml:droneSubEnumValue>
       </wpml:droneInfo>
     </wpml:missionConfig>
@@ -418,7 +442,7 @@ const generateWaylinesWpml = (routeName: string, waypoints: Waypoint[]) => {
       <wpml:templateType>waypoint</wpml:templateType>
       <wpml:templateId>0</wpml:templateId>
       <wpml:waylineId>0</wpml:waylineId>
-      <wpml:autoFlightSpeed>5</wpml:autoFlightSpeed>
+      <wpml:autoFlightSpeed>${globalSpeed}</wpml:autoFlightSpeed>
       <wpml:executeHeightMode>WGS84</wpml:executeHeightMode>
       ${placemarks}
     </Folder>
@@ -426,7 +450,7 @@ const generateWaylinesWpml = (routeName: string, waypoints: Waypoint[]) => {
 </kml>`;
 };
 
-export const exportDJIWPML = async (routes: Route[]) => {
+export const exportDJIWPML = async (routes: Route[], settings: FlightSettings) => {
     const masterZip = new JSZip();
     
     // Process all routes in parallel promises
@@ -435,8 +459,8 @@ export const exportDJIWPML = async (routes: Route[]) => {
         const wpmzFolder = kmzZip.folder("wpmz");
         
         if (wpmzFolder) {
-            const template = generateTemplateKml(route.name, route.waypoints);
-            const waylines = generateWaylinesWpml(route.name, route.waypoints);
+            const template = generateTemplateKml(route.name, route.waypoints, settings);
+            const waylines = generateWaylinesWpml(route.name, route.waypoints, settings);
             
             wpmzFolder.file("template.kml", template);
             wpmzFolder.file("waylines.wpml", waylines);

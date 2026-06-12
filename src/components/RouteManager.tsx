@@ -1,12 +1,12 @@
 
-
 import React, { useState, useEffect } from 'react';
-import { Route, Waypoint, SpeedUnit } from '../types';
-import { ArrowUp, ArrowDown, Trash2, Edit, ChevronDown, ChevronUp, X, Edit2 } from 'lucide-react';
+import { Route, Waypoint, SpeedUnit, RouteStats } from '../types';
+import { ArrowUp, ArrowDown, Trash2, Edit, ChevronDown, ChevronUp, X, Edit2, Battery } from 'lucide-react';
 import { t, Language } from '../translations';
 
 interface RouteManagerProps {
     routes: Route[];
+    stats: RouteStats; // Pass stats to detect swap waypoints
     onUpdateWaypoint: (routeId: string, wpId: number, field: string, value: any) => void;
     onDeleteWaypoint: (routeId: string, wpId: number) => void;
     onReorderWaypoint: (routeId: string, wpId: number, direction: 'up' | 'down') => void;
@@ -70,6 +70,7 @@ const TableInput = React.memo<{
 
 export const RouteManager: React.FC<RouteManagerProps> = ({ 
     routes, 
+    stats,
     onUpdateWaypoint, 
     onDeleteWaypoint, 
     onReorderWaypoint,
@@ -198,7 +199,6 @@ export const RouteManager: React.FC<RouteManagerProps> = ({
                             <table className="w-full text-sm text-left">
                                 <thead className="text-xs text-slate-700 uppercase bg-slate-50 border-b">
                                     <tr>
-                                        {/* Added Order Column */}
                                         <th className="px-4 py-3 w-12">{t("col_order", language)}</th>
                                         <th className="px-4 py-3 w-12">{t("col_wp", language)}</th>
                                         <th className="px-4 py-3">{t("col_latlon", language)}</th>
@@ -210,69 +210,79 @@ export const RouteManager: React.FC<RouteManagerProps> = ({
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {route.waypoints.map((wp, idx) => (
-                                        <tr key={wp.id} className="border-b hover:bg-blue-50 transition-colors">
-                                            {/* Order is simply Index + 1 */}
-                                            <td className="px-4 py-2 text-slate-500 font-mono">
-                                                {idx + 1}
-                                            </td>
-                                            {/* ID is the data ID - This is now "STICKY" and won't change on reorder */}
-                                            <td className="px-4 py-2 font-bold text-slate-800">
-                                                {wp.id}
-                                            </td>
-                                            <td className="px-4 py-2 text-slate-500 text-xs">
-                                                {wp.latitude.toFixed(5)}<br/>{wp.longitude.toFixed(5)}
-                                            </td>
-                                            <td className="px-4 py-2">
-                                                <TableInput 
-                                                    value={wp.altitude} 
-                                                    onChange={(val) => onUpdateWaypoint(route.id, wp.id, 'altitude', val)} 
-                                                    min={1} max={500}
-                                                />
-                                            </td>
-                                            <td className="px-4 py-2">
-                                                <TableInput
-                                                    value={toDisplaySpeed(wp.speed)} 
-                                                    onChange={(val) => onUpdateWaypoint(route.id, wp.id, 'speed', fromDisplaySpeed(val))} 
-                                                    min={0.1} max={100}
-                                                />
-                                            </td>
-                                            <td className="px-4 py-2">
-                                                 <TableInput 
-                                                    value={wp.gimbalPitch} 
-                                                    onChange={(val) => onUpdateWaypoint(route.id, wp.id, 'gimbalPitch', val)} 
-                                                    min={-90} max={30}
-                                                />
-                                            </td>
-                                            <td className="px-4 py-2">
-                                                <select 
-                                                    value={wp.actionType1} 
-                                                    disabled={route.locked}
-                                                    onChange={(e) => onUpdateWaypoint(route.id, wp.id, 'actionType1', Number(e.target.value))}
-                                                    className={`${inputClass} w-24`}
-                                                >
-                                                    <option value="-1">{t("act_none", language)}</option>
-                                                    <option value="0">{t("act_stay", language)}</option>
-                                                    <option value="1">{t("act_photo", language)}</option>
-                                                    <option value="2">{t("act_start_rec", language)}</option>
-                                                    <option value="3">{t("act_stop_rec", language)}</option>
-                                                    <option value="5">{t("act_rotate", language)}</option>
-                                                </select>
-                                            </td>
-                                            <td className="px-4 py-2 text-right">
-                                                <div className="flex justify-end gap-1">
-                                                    <button onClick={() => setEditingWp({routeId: route.id, wp})} className="p-1 text-slate-500 hover:text-blue-600 hover:bg-slate-200 rounded"><Edit size={14}/></button>
-                                                    {!route.locked && (
-                                                        <>
-                                                            <button onClick={() => onReorderWaypoint(route.id, wp.id, 'up')} disabled={idx === 0} className="p-1 text-slate-500 hover:text-slate-800 disabled:opacity-30"><ArrowUp size={14}/></button>
-                                                            <button onClick={() => onReorderWaypoint(route.id, wp.id, 'down')} disabled={idx === route.waypoints.length - 1} className="p-1 text-slate-500 hover:text-slate-800 disabled:opacity-30"><ArrowDown size={14}/></button>
-                                                            <button onClick={() => onDeleteWaypoint(route.id, wp.id)} className="p-1 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 size={14}/></button>
-                                                        </>
+                                    {route.waypoints.map((wp, idx) => {
+                                        // Detect if this waypoint is a battery swap point
+                                        const isSwapPoint = stats.swapPoints.some(pt => pt.wpId === wp.id);
+
+                                        return (
+                                            <tr key={wp.id} className={`border-b hover:bg-blue-50 transition-colors ${isSwapPoint ? 'bg-orange-50' : ''}`}>
+                                                <td className="px-4 py-2 text-slate-500 font-mono">
+                                                    {idx + 1}
+                                                </td>
+                                                <td className="px-4 py-2 font-bold text-slate-800">
+                                                    {wp.id}
+                                                </td>
+                                                <td className="px-4 py-2 text-slate-500 text-xs">
+                                                    {wp.latitude.toFixed(5)}<br/>{wp.longitude.toFixed(5)}
+                                                </td>
+                                                <td className="px-4 py-2">
+                                                    <TableInput 
+                                                        value={wp.altitude} 
+                                                        onChange={(val) => onUpdateWaypoint(route.id, wp.id, 'altitude', val)} 
+                                                        min={1} max={500}
+                                                    />
+                                                </td>
+                                                <td className="px-4 py-2">
+                                                    <TableInput
+                                                        value={toDisplaySpeed(wp.speed)} 
+                                                        onChange={(val) => onUpdateWaypoint(route.id, wp.id, 'speed', fromDisplaySpeed(val))} 
+                                                        min={0.1} max={100}
+                                                    />
+                                                </td>
+                                                <td className="px-4 py-2">
+                                                    <TableInput 
+                                                        value={wp.gimbalPitch} 
+                                                        onChange={(val) => onUpdateWaypoint(route.id, wp.id, 'gimbalPitch', val)} 
+                                                        min={-90} max={30}
+                                                    />
+                                                </td>
+                                                <td className="px-4 py-2">
+                                                    {isSwapPoint ? (
+                                                        <div className="flex items-center gap-1.5 bg-orange-600 text-white text-[10px] font-black px-2 py-1 rounded shadow-sm border border-orange-700 animate-pulse">
+                                                            <Battery size={12} fill="white"/>
+                                                            {t("rth_battery", language)}
+                                                        </div>
+                                                    ) : (
+                                                        <select 
+                                                            value={wp.actionType1} 
+                                                            disabled={route.locked}
+                                                            onChange={(e) => onUpdateWaypoint(route.id, wp.id, 'actionType1', Number(e.target.value))}
+                                                            className={`${inputClass} w-24`}
+                                                        >
+                                                            <option value="-1">{t("act_none", language)}</option>
+                                                            <option value="0">{t("act_stay", language)}</option>
+                                                            <option value="1">{t("act_photo", language)}</option>
+                                                            <option value="2">{t("act_start_rec", language)}</option>
+                                                            <option value="3">{t("act_stop_rec", language)}</option>
+                                                            <option value="5">{t("act_rotate", language)}</option>
+                                                        </select>
                                                     )}
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))}
+                                                </td>
+                                                <td className="px-4 py-2 text-right">
+                                                    <div className="flex justify-end gap-1">
+                                                        <button onClick={() => setEditingWp({routeId: route.id, wp})} className="p-1 text-slate-500 hover:text-blue-600 hover:bg-slate-200 rounded"><Edit size={14}/></button>
+                                                        {!route.locked && (
+                                                            <>
+                                                                <button onClick={() => onReorderWaypoint(route.id, wp.id, 'up')} disabled={idx === 0} className="p-1 text-slate-500 hover:text-slate-800 disabled:opacity-30"><ArrowUp size={14}/></button>
+                                                                <button onClick={() => onReorderWaypoint(route.id, wp.id, 'down')} disabled={idx === route.waypoints.length - 1} className="p-1 text-slate-500 hover:text-slate-800 disabled:opacity-30"><ArrowDown size={14}/></button>
+                                                                <button onClick={() => onDeleteWaypoint(route.id, wp.id)} className="p-1 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 size={14}/></button>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>

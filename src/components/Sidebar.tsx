@@ -1,8 +1,7 @@
 
-
 import React, { useRef, useState, useEffect } from 'react';
 import { FlightSettings, Route, RouteStats, DRONE_PRESETS, SpeedUnit } from '../types';
-import { Upload, Download, Settings, Trash2, Undo2, XCircle, Plane, FolderOpen, Save, Trash, Lock, Unlock, Clock, Ruler, Edit2, Camera, Video, Image } from 'lucide-react';
+import { Upload, Download, Settings, Trash2, Undo2, XCircle, Plane, FolderOpen, Save, Trash, Lock, Unlock, Clock, Ruler, Edit2, Camera, Video, Image, Battery } from 'lucide-react';
 import { t, Language } from '../translations';
 import { calculatePhotoInterval } from '../services/geometryService';
 import icon from '../../assets/icon.png';
@@ -131,6 +130,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [projectName, setProjectName] = useState('');
+  const [settingsTab, setSettingsTab] = useState<'general' | 'waypoints'>('general');
 
   // Auto Calculate Photo Interval if Mapping Mode is active
   useEffect(() => {
@@ -139,11 +139,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
             settings.altitude,
             settings.speedKmh,
             settings.selectedDroneModel,
-            settings.mappingOverlap // Using Vertical Overlap for interval calc
+            settings.mappingOverlap, // Using Vertical Overlap for interval calc
+            settings.aspectRatio
         );
         setSettings(prev => ({ ...prev, photoTimeInterval: interval }));
     }
-  }, [settings.flightMode, settings.altitude, settings.speedKmh, settings.selectedDroneModel, settings.mappingOverlap]);
+  }, [settings.flightMode, settings.altitude, settings.speedKmh, settings.selectedDroneModel, settings.mappingOverlap, settings.aspectRatio]);
 
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -160,9 +161,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  // High contrast white input
   const inputClass = "w-full bg-white text-gray-900 border border-slate-300 rounded text-sm p-2 focus:ring-2 focus:ring-blue-500 outline-none placeholder-gray-400";
-  // Button Base Class
   const btnBase = "transform transition active:scale-95 shadow-sm hover:shadow-md rounded font-medium text-sm flex items-center justify-center gap-2 px-3 py-2";
 
   return (
@@ -279,6 +278,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </div>
                 </div>
                 
+                {/* New Battery Info */}
+                <div className="mt-3 pt-2 border-t border-blue-200 text-center">
+                     <span className="block text-[10px] text-blue-500 font-bold uppercase">{t("est_batteries", language)}</span>
+                     <div className="text-lg font-bold text-blue-700 flex items-center justify-center gap-2">
+                        <Battery size={18} className="text-blue-600" />
+                        {stats.batteryCount}
+                     </div>
+                </div>
+
                 {/* File Summary Row */}
                 <div className="grid grid-cols-2 gap-4 mt-3 pt-2 border-t border-blue-200">
                      <div className="text-center">
@@ -399,50 +407,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
              </div>
           </div>
 
-          {/* Mode Switcher */}
-          <div className="flex p-1 bg-slate-200 rounded text-xs font-bold shadow-inner">
-            <button 
-                className={`flex-1 py-1 rounded transition-all ${settings.flightMode === 'standard' ? 'bg-white shadow text-blue-700' : 'text-slate-500 hover:text-slate-700'}`}
-                onClick={() => setSettings(prev => ({...prev, flightMode: 'standard'}))}
+          <div className="flex border-b border-slate-200 mb-2">
+            <button
+              className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider ${settingsTab === 'general' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+              onClick={() => setSettingsTab('general')}
             >
-                {t("mode_standard", language)}
+              {language === 'pt' ? 'Gerais (DJI Fly)' : 'General (DJI Fly)'}
             </button>
-            <button 
-                className={`flex-1 py-1 rounded transition-all ${settings.flightMode === 'mapping' ? 'bg-white shadow text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}
-                onClick={() => setSettings(prev => ({...prev, flightMode: 'mapping'}))}
+            <button
+              className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider ${settingsTab === 'waypoints' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+              onClick={() => setSettingsTab('waypoints')}
             >
-                {t("mode_mapping", language)}
+              {language === 'pt' ? 'Ponto a Ponto' : 'Waypoints'}
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">{t("altitude", language)}</label>
-              <SidebarNumberInput 
-                  className={inputClass} 
-                  value={settings.altitude} 
-                  onChange={(v) => setSettings(p => ({ ...p, altitude: v }))} 
-                  min={1} max={500}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">{t("speed", language)} ({speedUnit === 'kmh' ? 'km/h' : 'm/s'})</label>
-              <SidebarNumberInput 
-                  className={inputClass} 
-                  value={speedUnit === 'kmh' ? settings.speedKmh : (settings.speedKmh / 3.6)} 
-                  onChange={(v) => {
-                      const newKmh = speedUnit === 'kmh' ? v : v * 3.6;
-                      setSettings(p => ({ ...p, speedKmh: newKmh }));
-                  }} 
-                  min={0.1} max={100}
-              />
-            </div>
-          </div>
+          {settingsTab === 'general' && (
+            <div className="space-y-4 animate-in fade-in duration-300">
+              {/* Mode Switcher */}
+              <div className="flex p-1 bg-slate-200 rounded text-xs font-bold shadow-inner">
+                <button 
+                    className={`flex-1 py-1 rounded transition-all ${settings.flightMode === 'standard' ? 'bg-white shadow text-blue-700' : 'text-slate-500 hover:text-slate-700'}`}
+                    onClick={() => setSettings(prev => ({...prev, flightMode: 'standard'}))}
+                >
+                    {t("mode_standard", language)}
+                </button>
+                <button 
+                    className={`flex-1 py-1 rounded transition-all ${settings.flightMode === 'mapping' ? 'bg-white shadow text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}
+                    onClick={() => setSettings(prev => ({...prev, flightMode: 'mapping'}))}
+                >
+                    {t("mode_mapping", language)}
+                </button>
+              </div>
 
-          {settings.flightMode === 'mapping' && (
-             <div className="bg-orange-50 p-2 rounded border border-orange-200 space-y-2">
+              <div className="space-y-2">
                  <div>
-                    <label className="block text-[10px] font-bold text-orange-800 mb-1">{t("select_drone", language)}</label>
+                    <label className="block text-[10px] font-bold text-slate-700 mb-1">{t("select_drone", language)}</label>
                     <select 
                         value={settings.selectedDroneModel}
                         onChange={(e) => setSettings(prev => ({ ...prev, selectedDroneModel: e.target.value }))}
@@ -453,150 +453,252 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         ))}
                     </select>
                  </div>
-                 
-                 {/* GRID PATTERN SELECTION */}
+              </div>
+
+              {settings.flightMode === 'mapping' && (
+                 <div className="bg-orange-50 p-2 rounded border border-orange-200 space-y-2">
+                     {/* GRID PATTERN SELECTION */}
+                     <div>
+                        <label className="block text-[10px] font-bold text-orange-800 mb-1">{t("grid_pattern", language)}</label>
+                        <select 
+                            value={settings.mappingPattern}
+                            onChange={(e) => setSettings(prev => ({...prev, mappingPattern: e.target.value as any}))}
+                            className={inputClass}
+                        >
+                            <option value="parallel">{t("pattern_parallel", language)}</option>
+                            <option value="crosshatch">{t("pattern_cross", language)}</option>
+                        </select>
+                     </div>
+
+                     {/* ASPECT RATIO SELECTION */}
+                     <div>
+                        <label className="block text-[10px] font-bold text-orange-800 mb-1">{t("aspect_ratio", language)}</label>
+                        <select 
+                            value={settings.aspectRatio}
+                            onChange={(e) => setSettings(prev => ({...prev, aspectRatio: e.target.value as any}))}
+                            className={inputClass}
+                        >
+                            <option value="4:3">4:3 (Photo)</option>
+                            <option value="16:9">16:9 (Video)</option>
+                        </select>
+                     </div>
+
+                     <div className="grid grid-cols-2 gap-2">
+                         <div>
+                            <label className="block text-[10px] font-bold text-orange-800 mb-1">{t("overlap_v", language)}</label>
+                            <SidebarNumberInput className={inputClass} value={settings.mappingOverlap} onChange={v => setSettings(p => ({...p, mappingOverlap: v}))} min={0} max={99} />
+                         </div>
+                         <div>
+                            <label className="block text-[10px] font-bold text-orange-800 mb-1">{t("overlap_h", language)}</label>
+                            <SidebarNumberInput className={inputClass} value={settings.mappingOverlapH} onChange={v => setSettings(p => ({...p, mappingOverlapH: v}))} min={0} max={99} />
+                         </div>
+                         <div className="col-span-2">
+                            <label className="block text-[10px] font-bold text-orange-800 mb-1">{t("calc_interval", language)}</label>
+                            <input 
+                                type="text" 
+                                value={settings.photoTimeInterval > 0 ? settings.photoTimeInterval : 'N/A'}
+                                disabled
+                                className="w-full bg-slate-200 text-slate-600 border border-slate-300 rounded text-sm p-2 font-mono"
+                            />
+                         </div>
+                     </div>
+                 </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">{language === 'pt' ? 'Velocidade Global' : 'Global Speed'} ({speedUnit === 'kmh' ? 'km/h' : 'm/s'})</label>
+                  <SidebarNumberInput 
+                      className={inputClass} 
+                      value={speedUnit === 'kmh' ? settings.globalSpeedKmh : (settings.globalSpeedKmh / 3.6)} 
+                      onChange={(v) => {
+                          const newKmh = speedUnit === 'kmh' ? v : v * 3.6;
+                          setSettings(p => ({ ...p, globalSpeedKmh: newKmh }));
+                      }} 
+                      min={0.1} max={100}
+                  />
+                </div>
+                <div>
+                   <label className="block text-xs font-bold text-slate-700 mb-1">{language === 'pt' ? 'Sinal Perdido' : 'On Signal Lost'}</label>
+                   <select 
+                      value={settings.signalLostAction}
+                      onChange={(e) => setSettings(prev => ({...prev, signalLostAction: e.target.value as any}))}
+                      className={inputClass}
+                   >
+                     <option value="rth">RTH</option>
+                     <option value="hover">Hover</option>
+                     <option value="continue">Continue</option>
+                   </select>
+                </div>
+              </div>
+
+              {/* Battery Config Group */}
+              <div className="bg-blue-50 p-2 rounded border border-blue-200 space-y-2">
+                  <h3 className="text-[10px] font-bold text-blue-800 uppercase flex items-center gap-1"><Battery size={12}/> {t("battery_management", language)}</h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                       <label className="block text-[10px] font-bold text-blue-700 mb-1">{t("max_battery_time", language)}</label>
+                       <SidebarNumberInput className={inputClass} value={settings.maxFlightTimeMinutes} onChange={v => setSettings(p => ({...p, maxFlightTimeMinutes: v}))} min={5} max={60} />
+                    </div>
+                    <div>
+                       <label className="block text-[10px] font-bold text-blue-700 mb-1">{t("battery_safety", language)}</label>
+                       <SidebarNumberInput className={inputClass} value={settings.batterySafetyMargin} onChange={v => setSettings(p => ({...p, batterySafetyMargin: v}))} min={0} max={50} />
+                    </div>
+                  </div>
+              </div>
+
+              <div>
+                 <label className="block text-xs font-bold text-slate-700 mb-1">{t("finish_action", language)}</label>
+                 <select 
+                    value={settings.finishAction}
+                    onChange={(e) => setSettings(prev => ({...prev, finishAction: Number(e.target.value)}))}
+                    className={inputClass}
+                 >
+                   <option value="0">{t("act_none", language)}</option>
+                   <option value="1">{t("fin_rth", language)}</option>
+                   <option value="2">{t("fin_land", language)}</option>
+                   <option value="3">{t("fin_first", language)}</option>
+                   <option value="4">{t("fin_reverse", language)}</option>
+                 </select>
+              </div>
+              <button 
+                onClick={onApplySettings}
+                className={`${btnBase} w-full bg-slate-800 hover:bg-slate-900 text-white border-slate-900 shadow-md py-3 mt-2`}
+              >
+                {t("apply_settings", language)}
+              </button>
+            </div>
+          )}
+
+          {settingsTab === 'waypoints' && (
+            <div className="space-y-4 animate-in fade-in duration-300">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">{t("altitude", language)}</label>
+                  <SidebarNumberInput 
+                      className={inputClass} 
+                      value={settings.altitude} 
+                      onChange={(v) => setSettings(p => ({ ...p, altitude: v }))} 
+                      min={1} max={500}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">{t("speed", language)} ({speedUnit === 'kmh' ? 'km/h' : 'm/s'})</label>
+                  <SidebarNumberInput 
+                      className={inputClass} 
+                      value={speedUnit === 'kmh' ? settings.speedKmh : (settings.speedKmh / 3.6)} 
+                      onChange={(v) => {
+                          const newKmh = speedUnit === 'kmh' ? v : v * 3.6;
+                          setSettings(p => ({ ...p, speedKmh: newKmh }));
+                      }} 
+                      min={0.1} max={100}
+                  />
+                </div>
+              </div>
+
+              <div>
+                   <label className="block text-xs font-bold text-slate-700 mb-1">{t("altitude_mode", language)}</label>
+                   <select 
+                      value={settings.altitudeMode}
+                      onChange={(e) => setSettings(prev => ({...prev, altitudeMode: Number(e.target.value)}))}
+                      className={inputClass}
+                   >
+                     <option value="0">{t("alt_mode_rel", language)}</option>
+                     <option value="1">{t("alt_mode_abs", language)}</option>
+                   </select>
+              </div>
+
+              <div>
+                 <label className="block text-xs font-bold text-slate-700 mb-1">{t("heading_mode", language)}</label>
+                 <select 
+                    value={settings.headingMode}
+                    onChange={(e) => setSettings(prev => ({...prev, headingMode: e.target.value as any}))}
+                    className={inputClass}
+                   >
+                   <option value="auto_path">{t("head_auto_path", language)}</option>
+                   <option value="auto_bearing">{t("head_auto_bear", language)}</option>
+                   <option value="manual">{t("head_manual", language)}</option>
+                 </select>
+              </div>
+
+              {settings.headingMode === 'manual' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">{t("manual_heading", language)}</label>
+                  <SidebarNumberInput className={inputClass} value={settings.headingManual} onChange={v => setSettings(p => ({...p, headingManual: v}))} min={0} max={360}/>
+                </div>
+              )}
+
+               <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">{t("gimbal_pitch", language)}</label>
+                  <SidebarNumberInput className={inputClass} value={settings.gimbalPitch} onChange={v => setSettings(p => ({...p, gimbalPitch: v}))} min={-90} max={30} />
+                </div>
                  <div>
-                    <label className="block text-[10px] font-bold text-orange-800 mb-1">{t("grid_pattern", language)}</label>
-                    <select 
-                        value={settings.mappingPattern}
-                        onChange={(e) => setSettings(prev => ({...prev, mappingPattern: e.target.value as any}))}
-                        className={inputClass}
-                    >
-                        <option value="parallel">{t("pattern_parallel", language)}</option>
-                        <option value="crosshatch">{t("pattern_cross", language)}</option>
-                    </select>
-                 </div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">{t("curve_size", language)}</label>
+                  <SidebarNumberInput className={inputClass} value={settings.curveSize} onChange={v => setSettings(p => ({...p, curveSize: v}))} min={0} max={100} />
+                </div>
+              </div>
 
-                 <div className="grid grid-cols-2 gap-2">
-                     <div>
-                        <label className="block text-[10px] font-bold text-orange-800 mb-1">{t("overlap_v", language)}</label>
-                        <SidebarNumberInput className={inputClass} value={settings.mappingOverlap} onChange={v => setSettings(p => ({...p, mappingOverlap: v}))} min={0} max={99} />
-                     </div>
-                     <div>
-                        <label className="block text-[10px] font-bold text-orange-800 mb-1">{t("overlap_h", language)}</label>
-                        <SidebarNumberInput className={inputClass} value={settings.mappingOverlapH} onChange={v => setSettings(p => ({...p, mappingOverlapH: v}))} min={0} max={99} />
-                     </div>
-                     <div className="col-span-2">
-                        <label className="block text-[10px] font-bold text-orange-800 mb-1">{t("calc_interval", language)}</label>
-                        <input 
-                            type="text" 
-                            value={settings.photoTimeInterval > 0 ? settings.photoTimeInterval : 'N/A'}
-                            disabled
-                            className="w-full bg-slate-200 text-slate-600 border border-slate-300 rounded text-sm p-2 font-mono"
-                        />
-                     </div>
-                 </div>
-             </div>
-          )}
-          
-          <div>
-               <label className="block text-xs font-bold text-slate-700 mb-1">{t("altitude_mode", language)}</label>
-               <select 
-                  value={settings.altitudeMode}
-                  onChange={(e) => setSettings(prev => ({...prev, altitudeMode: Number(e.target.value)}))}
-                  className={inputClass}
-               >
-                 <option value="0">{t("alt_mode_rel", language)}</option>
-                 <option value="1">{t("alt_mode_abs", language)}</option>
-               </select>
-          </div>
+               <div>
+                   <label className="block text-xs font-bold text-slate-700 mb-1">{t("wp_action", language)}</label>
+                   <select 
+                      value={settings.action1}
+                      onChange={(e) => setSettings(prev => ({...prev, action1: Number(e.target.value)}))}
+                      className={inputClass}
+                   >
+                     <option value="-1">{t("act_none", language)}</option>
+                     <option value="0">{t("act_stay", language)}</option>
+                     <option value="1">{t("act_photo", language)}</option>
+                     <option value="2">{t("act_start_rec", language)}</option>
+                     <option value="3">{t("act_stop_rec", language)}</option>
+                     <option value="5">{t("act_rotate", language)}</option>
+                   </select>
+                </div>
 
-          <div>
-             <label className="block text-xs font-bold text-slate-700 mb-1">{t("heading_mode", language)}</label>
-             <select 
-                value={settings.headingMode}
-                onChange={(e) => setSettings(prev => ({...prev, headingMode: e.target.value as any}))}
-                className={inputClass}
-               >
-               <option value="auto_path">{t("head_auto_path", language)}</option>
-               <option value="auto_bearing">{t("head_auto_bear", language)}</option>
-               <option value="manual">{t("head_manual", language)}</option>
-             </select>
-          </div>
-
-          {settings.headingMode === 'manual' && (
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">{t("manual_heading", language)}</label>
-              <SidebarNumberInput className={inputClass} value={settings.headingManual} onChange={v => setSettings(p => ({...p, headingManual: v}))} min={0} max={360}/>
+              <button 
+                onClick={onApplySettings}
+                className={`${btnBase} w-full bg-slate-800 hover:bg-slate-900 text-white border-slate-900 shadow-md py-3 mt-2`}
+              >
+                {t("apply_settings", language)}
+              </button>
             </div>
           )}
-
-           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">{t("gimbal_pitch", language)}</label>
-              <SidebarNumberInput className={inputClass} value={settings.gimbalPitch} onChange={v => setSettings(p => ({...p, gimbalPitch: v}))} min={-90} max={30} />
-            </div>
-             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">{t("curve_size", language)}</label>
-              <SidebarNumberInput className={inputClass} value={settings.curveSize} onChange={v => setSettings(p => ({...p, curveSize: v}))} min={0} max={100} />
-            </div>
-          </div>
-
-           <div className="grid grid-cols-2 gap-4">
-             <div>
-               <label className="block text-xs font-bold text-slate-700 mb-1">{t("wp_action", language)}</label>
-               <select 
-                  value={settings.action1}
-                  onChange={(e) => setSettings(prev => ({...prev, action1: Number(e.target.value)}))}
-                  className={inputClass}
-               >
-                 <option value="-1">{t("act_none", language)}</option>
-                 <option value="0">{t("act_stay", language)}</option>
-                 <option value="1">{t("act_photo", language)}</option>
-                 <option value="2">{t("act_start_rec", language)}</option>
-                 <option value="3">{t("act_stop_rec", language)}</option>
-                 <option value="5">{t("act_rotate", language)}</option>
-               </select>
-            </div>
-            <div>
-               <label className="block text-xs font-bold text-slate-700 mb-1">{t("finish_action", language)}</label>
-               <select 
-                  value={settings.finishAction}
-                  onChange={(e) => setSettings(prev => ({...prev, finishAction: Number(e.target.value)}))}
-                  className={inputClass}
-               >
-                 <option value="0">{t("act_none", language)}</option>
-                 <option value="1">{t("fin_rth", language)}</option>
-                 <option value="2">{t("fin_land", language)}</option>
-                 <option value="3">{t("fin_first", language)}</option>
-                 <option value="4">{t("fin_reverse", language)}</option>
-               </select>
-            </div>
-          </div>
-
-          <button 
-            onClick={onApplySettings}
-            className={`${btnBase} w-full bg-slate-800 hover:bg-slate-900 text-white border-slate-900 shadow-md py-3`}
-          >
-            {t("apply_settings", language)}
-          </button>
         </section>
 
         <hr className="border-slate-200" />
 
         {/* Section 3: Export */}
-        <section className="space-y-3 pb-8">
-          <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">{t("export", language)}</h2>
+        <section className="space-y-4 pb-8">
+          <h2 className="text-sm font-black text-slate-500 uppercase tracking-widest flex items-center gap-2 border-b border-slate-200 pb-2">
+            <Download size={16} /> {t("export", language)}
+          </h2>
            <button 
               onClick={onExportLitchi}
               disabled={routes.length === 0}
-              className={`${btnBase} w-full bg-blue-600 disabled:bg-slate-300 hover:bg-blue-700 text-white`}
+              className={`${btnBase} w-full bg-indigo-600 disabled:bg-slate-300 hover:bg-indigo-700 text-white py-3 shadow-lg hover:shadow-indigo-500/20 transition-all font-bold`}
             >
-              <Download size={18} /> Litchi CSV
+              <Download size={20} /> {t("export_litchi", language)}
             </button>
              <button 
               onClick={onExportKML}
                disabled={routes.length === 0}
-              className={`${btnBase} w-full bg-slate-600 disabled:bg-slate-300 hover:bg-slate-700 text-white`}
+              className={`${btnBase} w-full bg-emerald-600 disabled:bg-slate-300 hover:bg-emerald-700 text-white py-3 shadow-lg hover:shadow-emerald-500/20 transition-all font-bold`}
             >
-              <Download size={18} /> Standard KML
+              <Download size={20} /> {t("export_kml", language)}
             </button>
              <button 
               onClick={onExportWPML}
                disabled={routes.length === 0}
-              className={`${btnBase} w-full bg-orange-600 disabled:bg-slate-300 hover:bg-orange-700 text-white shadow-md`}
+              className={`${btnBase} w-full bg-orange-500 disabled:bg-slate-300 hover:bg-orange-600 text-white py-3 shadow-lg hover:shadow-orange-500/30 transition-all font-bold`}
             >
-              <Plane size={18} /> DJI Fly (KMZ/WPML)
+              <Plane size={20} /> {t("export_dji_fly", language)}
+            </button>
+            <button 
+              onClick={onExportWPML}
+               disabled={routes.length === 0}
+              className={`${btnBase} w-full bg-black disabled:bg-slate-500 hover:bg-slate-800 text-white py-3 shadow-xl hover:shadow-slate-500/40 transition-all font-bold ring-1 ring-slate-700`}
+            >
+              <Plane size={20} /> {t("export_dji_pilot", language)}
             </button>
         </section>
       </div>

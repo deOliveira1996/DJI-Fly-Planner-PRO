@@ -1,5 +1,4 @@
 
-
 export type Language = 'en' | 'pt';
 
 export const t = (key: string, lang: Language): string => {
@@ -27,9 +26,15 @@ export const t = (key: string, lang: Language): string => {
     "est_time": { en: "Est. Time", pt: "Tempo Est." },
     "est_photos": { en: "Est. Photos", pt: "Fotos Est." },
     "est_videos": { en: "Est. Videos", pt: "Vídeos Est." },
+    "est_batteries": { en: "Est. Batteries", pt: "Baterias Est." },
     "stats_note": { en: "Includes commute & action delays.", pt: "Inclui deslocamento e atrasos de ação." },
     "view_stats_for": { en: "View Stats For:", pt: "Ver Stats Para:" },
     "all_routes": { en: "All Routes (Sum)", pt: "Todas as Rotas (Soma)" },
+
+    // Battery / RTH
+    "battery_swap_at": { en: "Battery Swap at WP", pt: "Troca de Bateria no WP" },
+    "rth_battery": { en: "RTH (Battery)", pt: "RTH (Bateria)" },
+    "swap_note": { en: "Drone finishes action then returns to Home.", pt: "Drone finaliza ação e retorna para o Home." },
 
     // Route Actions
     "route_actions": { en: "Route Actions", pt: "Ações de Rota" },
@@ -70,6 +75,9 @@ export const t = (key: string, lang: Language): string => {
     "wp_action": { en: "WP Action", pt: "Ação do WP" },
     "finish_action": { en: "Finish Action", pt: "Ação de Finalização" },
     "apply_settings": { en: "Apply Settings (Unlocked Only)", pt: "Aplicar Configurações (Desbloqueados)" },
+    "battery_management": { en: "Battery Management", pt: "Gerenciamento de Bateria" },
+    "max_battery_time": { en: "Max Flight Time (min)", pt: "Tempo Máx. Voo (min)" },
+    "battery_safety": { en: "Safety Margin (%)", pt: "Margem Segurança (%)" },
     
     // Actions Options
     "act_none": { en: "None", pt: "Nenhuma" },
@@ -87,7 +95,11 @@ export const t = (key: string, lang: Language): string => {
     
     // Export
     "export": { en: "Export", pt: "Exportar" },
-    "dji_fly_note": { en: "DJI Fly Note: Use the Orange button for Mini 4 Pro / Air 3.", pt: "Nota DJI Fly: Use o botão Laranja para Mini 4 Pro / Air 3." },
+    "export_dji_fly": { en: "DJI Fly (KMZ)", pt: "DJI Fly (KMZ)" },
+    "export_dji_pilot": { en: "DJI Pilot (KMZ)", pt: "DJI Pilot (KMZ)" },
+    "export_litchi": { en: "Litchi CSV", pt: "Litchi CSV" },
+    "export_kml": { en: "Standard KML", pt: "KML Padrão" },
+    "dji_fly_note": { en: "DJI Fly Note: Compatible with Mini 4 Pro, Air 3, Mavic 3 Series, Matrice 30.", pt: "Nota DJI Fly: Compatível com Mini 4 Pro, Air 3, Mavic 3 Series, Matrice 30." },
     
     // Route Manager
     "rm_title": { en: "Route Manager", pt: "Gerenciador de Rotas" },
@@ -136,12 +148,26 @@ export const t = (key: string, lang: Language): string => {
     // New GSD/Blur Terms
     "shutter_speed": { en: "Shutter Speed", pt: "Velocidade do Obturador" },
     "motion_blur": { en: "Motion Blur", pt: "Desfoque de Movimento" },
+    "rolling_shutter_delta": { en: "Rolling Shutter (Δ)", pt: "Efeito Rolling Shutter (Δ)" },
+    "delta_desc": { en: "Vertical pixel displacement. Keep < 2.0 (Ideally < 1.2).", pt: "Deslocamento vertical de pixels. Manter < 2.0 (Ideal < 1.2)." },
     "gsd": { en: "GSD (Resolution)", pt: "GSD (Resolução)" },
     "photo_interval_dist": { en: "Shot Interval (Dist)", pt: "Intervalo Disparo (Dist)" },
     "photo_interval_time": { en: "Shot Interval (Time)", pt: "Intervalo Disparo (Tempo)" },
     "lane_spacing": { en: "Lane Spacing", pt: "Espaçamento entre Linhas" },
     "sensor_dim": { en: "Sensor Size", pt: "Tam. do Sensor" },
     "focal_len": { en: "Real Focal Len.", pt: "Dist. Focal Real" },
+    "aspect_ratio": { en: "Aspect Ratio", pt: "Proporção" },
+    "eis_crop": { en: "Electronic Stabilization (EIS)", pt: "Estabilização Eletrônica (EIS)" },
+    "mode_photo": { en: "Photo (4:3)", pt: "Foto (4:3)" },
+    "mode_video": { en: "Video (16:9)", pt: "Vídeo (16:9)" },
+    "fov_diagonal": { en: "Diagonal FOV (°)", pt: "FOV Diagonal (°)" },
+    "keystone_adj": { en: "Correction Factor (K)", pt: "Fator de Correção (K)" },
+    "keystone_desc": { en: "Adjusts image depth (Y) for perspective distortion in oblique angles.", pt: "Ajusta a profundidade da imagem (Y) para distorção de perspectiva em ângulos oblíquos." },
+    "area_m2": { en: "Area (m²)", pt: "Área (m²)" },
+    "width_m": { en: "Width (m)", pt: "Largura (m)" },
+    "height_m": { en: "Height (m)", pt: "Altura (m)" },
+    "instr_keystone_title": { en: "Keystone Effect & Oblate Angles", pt: "Efeito Keystone e Ângulos Oblíquos" },
+    "instr_keystone_desc": { en: "At shallow angles (e.g., -33°), the projection on the ground stretches exponentially. This calculation accounts for a correction factor (K) to handle perspective distortion and stabilization crops.", pt: "Em ângulos rasos (ex: -33°), a projeção no solo se alonga exponencialmente. Este cálculo utiliza um fator de correção (K) para lidar com a distorção de perspectiva e o crop de estabilização." },
 
     // Tabs
     "tab_map": { en: "Map Planner", pt: "Mapa Planejador" },
@@ -163,19 +189,40 @@ export const t = (key: string, lang: Language): string => {
     
     "instr_map_title": { en: "How to use the Map", pt: "Como usar o Mapa" },
     "instr_map_desc": { en: "Create routes by drawing on the map. Use the 'Settings' sidebar to configure altitude and speed for all points.", pt: "Crie rotas desenhando no mapa. Use a barra lateral 'Configurações' para definir altitude e velocidade." },
-    
+    "instr_creating_routes": { en: "Creating Routes", pt: "Criando Rotas" },
+    "instr_polyline_tool": { en: "Polyline Tool: Use this for standard waypoint missions (video/inspection). Click points to draw, double-click to finish.", pt: "Ferramenta Polilinha: Use para missões de waypoints padrão (vídeo/inspeção). Clique para desenhar, clique duplo para finalizar." },
+    "instr_polygon_tool": { en: "Polygon Tool: Use this for Mapping Mode. Draw an area, and the app generates a grid automatically.", pt: "Ferramenta Polígono: Use para o Modo Mapeamento. Desenhe uma área e o app gera a grade automaticamente." },
+    "instr_adjusting": { en: "Adjusting", pt: "Ajustando" },
+    "instr_drag_wp": { en: "Drag any waypoint arrow to move it.", pt: "Arraste qualquer seta de waypoint para movê-la." },
+    "instr_drag_home": { en: "Drag the Green 'H' Marker to set the Takeoff/Home point. This is crucial for accurate RTH estimates.", pt: "Arraste o Marcador 'H' Verde para definir o ponto de decolagem. Isso é crucial para estimativas reais de RTH." },
+    "instr_rotate_grid": { en: "In Mapping Mode, drag the white Rotate Handle (🔄) to change grid angle.", pt: "No modo Mapeamento, arraste o manipulador branco (🔄) para mudar o ângulo da grade." },
+
     "instr_calc_title": { en: "Understanding the Calculator", pt: "Entendendo a Calculadora" },
     "instr_calc_desc": { en: "The calculator helps you ensure image quality (GSD) and safety (Blur) before flying.", pt: "A calculadora ajuda a garantir a qualidade da imagem (GSD) e a segurança (Desfoque) antes de voar." },
     
     "instr_calc_gsd_explain": { en: "GSD (Ground Sampling Distance): Represents pixel size on the ground. Lower is better quality (e.g., 2 cm/px is better than 5 cm/px).", pt: "GSD (Ground Sampling Distance): Representa o tamanho do pixel no chão. Menor é melhor qualidade (ex: 2 cm/px é melhor que 5 cm/px)." },
     
     "instr_calc_blur_explain": { en: "Motion Blur: How much the image smears due to speed. It MUST be lower than your GSD for sharp photos. If it's red, fly slower or increase shutter speed.", pt: "Desfoque de Movimento: Quanto a imagem borra devido à velocidade. DEVE ser menor que o GSD para fotos nítidas. Se estiver vermelho, voe mais devagar ou aumente a velocidade do obturador." },
+
+    "instr_visual_scan_explain": { 
+        en: "Visual Result & Scan Time: The calculator also shows a 'V-Shape' visual. This represents the camera's field of view on the ground. The Est. Scan Time tells you how long it takes to fly the visual distance shown (H) at your selected speed.", 
+        pt: "Resultado Visual e Tempo de Varredura: A calculadora também mostra uma visualização em 'V'. Isso representa o campo de visão da câmera no chão. O Tempo de Varredura Est. informa quanto tempo leva para voar a distância visual mostrada (H) na velocidade selecionada." 
+    },
     
     "instr_import_title": { en: "DJI Native Import", pt: "Importação Nativa DJI" },
     
-    // New Import Guide
+    // DJI Pilot Import Guide
+    "dji_pilot_guide": { en: "DJI Pilot 2 (Enterprise) Import Guide", pt: "Guia de Importação DJI Pilot 2 (Enterprise)" },
+    "dji_pilot_compat": { en: "Compatible: Matrice 30/30T, Mavic 3 Enterprise, Matrice 300/350 RTK", pt: "Compatível: Matrice 30/30T, Mavic 3 Enterprise, Matrice 300/350 RTK" },
+    "dji_pilot_step_1": { en: "Export the KMZ using the 'DJI Pilot' button.", pt: "Exporte o KMZ usando o botão 'DJI Pilot'." },
+    "dji_pilot_step_2": { en: "Connect your RC Plus / RC Pro Enterprise to your PC.", pt: "Conecte seu RC Plus / RC Pro Enterprise ao PC." },
+    "dji_pilot_step_3": { en: "Copy the file to the internal storage folder:", pt: "Copie o arquivo para a pasta do armazenamento interno:" },
+    "dji_pilot_path": { en: "/PayloadSDK/waypoint/", pt: "/PayloadSDK/waypoint/" },
+    "dji_pilot_step_4": { en: "Open DJI Pilot 2 -> Mission Control -> Import (top right icon).", pt: "Abra o DJI Pilot 2 -> Mission Control -> Importar (ícone superior direito)." },
+    
+    // New Import Guide tokens (existing updated above)
     "dji_import_guide": { en: "Native DJI Fly Import Guide", pt: "Guia de Importação Nativa DJI Fly" },
-    "dji_compat_drones": { en: "Compatible Drones: Mini 4 Pro, Air 3, Mavic 3 (Pro/Classic/Enterprise)", pt: "Drones Compatíveis: Mini 4 Pro, Air 3, Mavic 3 (Pro/Classic/Enterprise)" },
+    "dji_compat_drones": { en: "Compatible Drones: Mini 4 Pro, Air 3, Mavic 3 (Pro/Classic/Enterprise), Matrice 30/30T, Matrice 300/350 RTK", pt: "Drones Compatíveis: Mini 4 Pro, Air 3, Mavic 3 (Pro/Classic/Enterprise), Matrice 30/30T, Matrice 300/350 RTK" },
     "dji_step_1": { en: "Export your route using the Orange 'DJI Fly (KMZ)' button.", pt: "Exporte sua rota usando o botão Laranja 'DJI Fly (KMZ)'." },
     "dji_step_2": { en: "Connect your DJI RC 2 / RC Pro to your computer via USB-C.", pt: "Conecte seu DJI RC 2 / RC Pro ao computador via USB-C." },
     "dji_step_3": { en: "Navigate to this specific folder path:", pt: "Navegue para esta pasta específica:" },

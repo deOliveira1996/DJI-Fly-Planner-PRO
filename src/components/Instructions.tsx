@@ -35,18 +35,18 @@ export const Instructions: React.FC<InstructionsProps> = ({ language }) => {
                     <p>{t("instr_map_desc", language)}</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
                         <div className="bg-slate-50 p-3 rounded border border-slate-200 text-sm">
-                            <strong className="block text-slate-800 mb-1 flex items-center gap-2"><MousePointer2 size={14}/> Creating Routes</strong>
+                            <strong className="block text-slate-800 mb-1 flex items-center gap-2"><MousePointer2 size={14}/> {t("instr_creating_routes", language)}</strong>
                             <ul className="list-disc pl-4 space-y-1">
-                                <li><strong>Polyline Tool:</strong> Use this for standard waypoint missions (video/inspection). Click points to draw, double-click to finish.</li>
-                                <li><strong>Polygon Tool:</strong> Use this for <strong>Mapping Mode</strong>. Draw an area, and the app generates a grid automatically.</li>
+                                <li>{t("instr_polyline_tool", language)}</li>
+                                <li>{t("instr_polygon_tool", language)}</li>
                             </ul>
                         </div>
                         <div className="bg-slate-50 p-3 rounded border border-slate-200 text-sm">
-                            <strong className="block text-slate-800 mb-1 flex items-center gap-2"><Plane size={14}/> Adjusting</strong>
+                            <strong className="block text-slate-800 mb-1 flex items-center gap-2"><Plane size={14}/> {t("instr_adjusting", language)}</strong>
                             <ul className="list-disc pl-4 space-y-1">
-                                <li>Drag any waypoint arrow to move it.</li>
-                                <li>Drag the <strong>Green 'H' Marker</strong> to set the Takeoff/Home point. This is crucial for accurate RTH estimates.</li>
-                                <li>In Mapping Mode, drag the white <strong>Rotate Handle (🔄)</strong> to change grid angle.</li>
+                                <li>{t("instr_drag_wp", language)}</li>
+                                <li>{t("instr_drag_home", language)}</li>
+                                <li>{t("instr_rotate_grid", language)}</li>
                             </ul>
                         </div>
                     </div>
@@ -75,17 +75,51 @@ export const Instructions: React.FC<InstructionsProps> = ({ language }) => {
                                 <li><strong>Red:</strong> Blur &gt; GSD (Bad - Blurry)</li>
                             </ul>
                         </div>
+
+                        {/* Keystone Explanation */}
+                        <div className="bg-orange-50 border border-orange-100 p-4 rounded-lg md:col-span-2">
+                            <h3 className="font-bold text-orange-800 mb-2">3. {t("instr_keystone_title", language)}</h3>
+                            <div className="flex flex-col md:flex-row gap-4">
+                                <p className="text-sm text-orange-900 flex-1">{t("instr_keystone_desc", language)}</p>
+                                <div className="text-xs text-orange-700 bg-white p-2 rounded border border-orange-100 shrink-0 font-mono">
+                                    <strong>Formula:</strong> Y_real = Y_calc * K
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     
                     <div className="mt-4 p-3 bg-slate-100 rounded text-sm text-slate-700 flex items-start gap-2">
                         <Info size={16} className="mt-0.5 shrink-0 text-slate-500"/>
                         <span>
-                            <strong>Visual Result & Scan Time:</strong> The calculator also shows a "V-Shape" visual. This represents the camera's field of view on the ground. The <strong>Est. Scan Time</strong> tells you how long it takes to fly the visual distance shown (H) at your selected speed.
+                            <strong>{t("instr_visual_scan_explain", language)}</strong>
                         </span>
                     </div>
                 </Section>
 
-                {/* 3. DJI IMPORT GUIDE */}
+                {/* 3. DJI PILOT IMPORT GUIDE (ENTERPRISE) */}
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 shadow-sm mb-6">
+                    <h2 className="text-xl font-black text-blue-700 mb-4 flex items-center gap-2">
+                        <Smartphone size={24}/> {t("dji_pilot_guide", language)}
+                    </h2>
+                    <div className="space-y-4">
+                        <p className="font-bold text-slate-800 text-sm bg-blue-100 inline-block px-2 py-1 rounded">
+                            {t("dji_pilot_compat", language)}
+                        </p>
+                        <ol className="list-decimal pl-5 space-y-3 text-sm text-slate-700 font-medium">
+                            <li>{t("dji_pilot_step_1", language)}</li>
+                            <li>{t("dji_pilot_step_2", language)}</li>
+                            <li>
+                                {t("dji_pilot_step_3", language)}
+                                <div className="mt-2 bg-white p-3 border border-blue-200 rounded font-mono text-xs text-blue-800 select-all shadow-inner break-all">
+                                    /Internal Storage/PayloadSDK/waypoint/
+                                </div>
+                            </li>
+                            <li>{t("dji_pilot_step_4", language)}</li>
+                        </ol>
+                    </div>
+                </div>
+
+                {/* 4. DJI FLY IMPORT GUIDE (CONSUMER) */}
                 <div className="bg-orange-50 border border-orange-200 rounded-xl p-6 shadow-sm">
                     <h2 className="text-xl font-black text-orange-700 mb-4 flex items-center gap-2">
                         <Smartphone size={24}/> {t("dji_import_guide", language)}

@@ -4,13 +4,12 @@ import { MapContainer, TileLayer, FeatureGroup, Polyline, Marker, Popup, useMapE
 import { EditControl } from 'react-leaflet-draw';
 import L from 'leaflet';
 import 'leaflet-draw';
-import { Route, FlightSettings, SpeedUnit } from '../types';
+import { Route, FlightSettings, SpeedUnit, Waypoint, RouteStats } from '../types';
 import { calculateDistance, calculateBearing, generateGridWaypoints, computeDestinationPoint } from '../services/geometryService';
 import { Language, t } from '../translations';
 import * as turf from '@turf/turf';
 import { point as createPoint, points as createPoints } from '@turf/helpers';
 
-// Custom Green Home Icon
 const HomeIcon = L.icon({
     iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
     shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
@@ -19,7 +18,24 @@ const HomeIcon = L.icon({
     popupAnchor: [1, -34]
 });
 
-// Rotate Icon - Circle with Arrows
+// Large Orange Battery/RTH Icon for swap points
+const BatterySwapIcon = L.divIcon({
+    className: 'battery-swap-icon',
+    html: `
+    <div style="background-color: #f97316; color: white; border: 3px solid white; width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 8px rgba(0,0,0,0.4); animation: pulse 2s infinite;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/></svg>
+    </div>
+    <style>
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.15); box-shadow: 0 0 15px #f97316; }
+            100% { transform: scale(1); }
+        }
+    </style>`,
+    iconSize: [44, 44],
+    iconAnchor: [22, 22]
+});
+
 const RotateDivIcon = L.divIcon({
     className: 'rotate-handle-icon',
     html: '<div style="background-color: white; border: 2px solid #8b5cf6; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.3); font-size: 18px; cursor: crosshair;">🔄</div>',
@@ -34,7 +50,6 @@ const PivotIcon = L.divIcon({
     iconAnchor: [5, 5]
 });
 
-// Ruler Endpoint Icon
 const RulerIcon = L.divIcon({
     className: 'ruler-handle',
     html: '<div style="background-color: white; border: 2px solid #3b82f6; width: 12px; height: 12px; border-radius: 50%;"></div>',
@@ -42,7 +57,6 @@ const RulerIcon = L.divIcon({
     iconAnchor: [6, 6]
 });
 
-// Arrow Icon
 const createArrowIcon = (heading: number, color: string, isLocked: boolean) => {
     const fillColor = isLocked ? '#888888' : color;
     const svg = `
@@ -55,7 +69,7 @@ const createArrowIcon = (heading: number, color: string, isLocked: boolean) => {
         className: 'custom-arrow-icon',
         html: svg,
         iconSize: [30, 30],
-        iconAnchor: [15, 15] // Center anchor
+        iconAnchor: [15, 15] 
     });
 };
 
@@ -78,9 +92,9 @@ interface MapProps {
   onRotationUpdate: (routeId: string, angle: number) => void;
   speedUnit: SpeedUnit;
   language: Language;
+  stats: RouteStats; // Receive stats to render swap points
 }
 
-// Draggable Marker Component for Waypoints
 interface DraggableArrowProps {
   position: L.LatLngExpression;
   routeId: string;
@@ -177,32 +191,25 @@ const DraggableHomeMarker: React.FC<{ position: L.LatLngExpression, routeName: s
     );
 };
 
-// Enhanced Rotation Handle with Lever Arm
 const GridRotationHandle: React.FC<{ route: Route, onRotate: (id: string, angle: number) => void }> = ({ route, onRotate }) => {
     const map = useMap();
-    
-    // Only show if it looks like a grid (has originalPolygon or waypoints)
     const polyData = route.originalPolygon || route.waypoints;
     if (polyData.length < 3) return null;
 
-    // Calculate centroid
     const points = createPoints(polyData.map(wp => [
         (wp as any).longitude || (wp as any).lng, 
         (wp as any).latitude || (wp as any).lat
     ]));
     const center = turf.center(points);
-    const centerCoords = center.geometry.coordinates; // [lng, lat]
+    const centerCoords = center.geometry.coordinates; 
     const centerLatLng = L.latLng(centerCoords[1], centerCoords[0]);
 
-    // Calculate Lever Arm Radius (bbox diagonal / 2)
     const bbox = turf.bbox(points);
     const d1 = createPoint([bbox[0], bbox[1]]);
     const d2 = createPoint([bbox[2], bbox[3]]);
     const distKm = turf.distance(d1, d2);
-    // Set lever length to 60% of bounding box diagonal or min 50 meters
     const leverDistMeters = Math.max(50, (distKm * 1000) * 0.6);
 
-    // Calculate current Handle Position based on rotation
     const currentAngle = route.gridRotation || 0;
     const handlePosObj = computeDestinationPoint(centerLatLng.lat, centerLatLng.lng, leverDistMeters, currentAngle);
     const handleLatLng = L.latLng(handlePosObj.lat, handlePosObj.lng);
@@ -211,37 +218,22 @@ const GridRotationHandle: React.FC<{ route: Route, onRotate: (id: string, angle:
         drag(e: any) {
              const markerPt = map.latLngToContainerPoint(e.target.getLatLng());
              const centerPt = map.latLngToContainerPoint(centerLatLng);
-             
-             // Calculate angle
-             // atan2(y, x) -> standard cartesian (0 is Right, 90 is Down)
              const radians = Math.atan2(markerPt.y - centerPt.y, markerPt.x - centerPt.x);
-             
-             // Convert to degrees
              let deg = radians * (180 / Math.PI);
-             
-             // Align: We want 0 to be Up (North).
              deg = (deg + 90) % 360;
              if (deg < 0) deg += 360;
-             
              onRotate(route.id, deg);
         },
-        dragend(e: any) {
-            // Force re-render will reset position via props, but we can set it explicitly to avoid jitter
-        }
+        dragend(e: any) {}
     }), [route.id, centerLatLng, map, onRotate]);
 
     return (
          <>
-            {/* Pivot Point */}
             <Marker position={centerLatLng} icon={PivotIcon} interactive={false} />
-
-            {/* Lever Arm Line */}
             <Polyline 
                 positions={[centerLatLng, handleLatLng]} 
                 pathOptions={{ color: '#8b5cf6', weight: 2, dashArray: '5, 5', opacity: 0.8 }} 
             />
-
-            {/* Rotation Handle */}
             <Marker
                 position={handleLatLng}
                 icon={RotateDivIcon}
@@ -300,6 +292,53 @@ const SegmentDistanceLabels: React.FC<{ route: Route }> = ({ route }) => {
     );
 };
 
+const ColoredPath: React.FC<{ route: Route }> = ({ route }) => {
+    if (route.waypoints.length < 2) return null;
+
+    const segments: { positions: L.LatLngExpression[], isEffort: boolean }[] = [];
+    
+    segments.push({
+        positions: [
+            [route.homePoint.lat, route.homePoint.lng],
+            [route.waypoints[0].latitude, route.waypoints[0].longitude]
+        ],
+        isEffort: false
+    });
+
+    for (let i = 0; i < route.waypoints.length - 1; i++) {
+        const wp1 = route.waypoints[i];
+        const wp2 = route.waypoints[i+1];
+        const isEffortLine = wp1.isEffort && wp2.isEffort;
+
+        segments.push({
+            positions: [
+                [wp1.latitude, wp1.longitude],
+                [wp2.latitude, wp2.longitude]
+            ],
+            isEffort: isEffortLine
+        });
+    }
+
+    const effortColor = route.locked ? '#888888' : route.color;
+    const offEffortColor = '#94a3b8'; 
+
+    return (
+        <>
+            {segments.map((seg, idx) => (
+                <Polyline 
+                    key={idx}
+                    positions={seg.positions}
+                    pathOptions={{
+                        color: seg.isEffort ? effortColor : offEffortColor,
+                        weight: seg.isEffort ? 4 : 2,
+                        opacity: 0.8,
+                        dashArray: seg.isEffort ? undefined : '5, 5'
+                    }}
+                />
+            ))}
+        </>
+    );
+};
 
 const RulerComponent: React.FC<{ active: boolean }> = ({ active }) => {
     const [points, setPoints] = useState<L.LatLng[]>([]);
@@ -338,14 +377,10 @@ const RulerComponent: React.FC<{ active: boolean }> = ({ active }) => {
         const p2 = points[1];
         const dist = calculateDistance(p1.lat, p1.lng, p2.lat, p2.lng);
         distanceText = dist > 1000 ? `${(dist/1000).toFixed(2)} km` : `${dist.toFixed(1)} m`;
-        
         labelPos = L.latLng((p1.lat + p2.lat) / 2, (p1.lng + p2.lng) / 2);
-        
         const bearing = calculateBearing(p1.lat, p1.lng, p2.lat, p2.lng);
         rotationDeg = bearing;
-        if (bearing > 90 && bearing <= 270) {
-            rotationDeg = bearing - 180;
-        }
+        if (bearing > 90 && bearing <= 270) rotationDeg = bearing - 180;
     }
 
     return (
@@ -361,7 +396,6 @@ const RulerComponent: React.FC<{ active: boolean }> = ({ active }) => {
                     }}
                 />
             ))}
-            
             {points.length === 2 && (
                 <>
                     <Polyline positions={points} color="#3b82f6" weight={2} dashArray="5, 5" />
@@ -385,7 +419,7 @@ const RulerComponent: React.FC<{ active: boolean }> = ({ active }) => {
 export const MapEditor: React.FC<MapProps> = ({ 
     routes, measureMode, headingMode, flightMode, currentSettings,
     onRouteCreated, onWaypointUpdate, onHomePointUpdate, onRotationUpdate,
-    speedUnit, language
+    speedUnit, language, stats
 }) => {
   const [ready, setReady] = useState(false);
 
@@ -408,12 +442,11 @@ export const MapEditor: React.FC<MapProps> = ({
         lng: ll.lng
       }));
 
-      // --- MAPPING MODE LOGIC ---
       if (flightMode === 'mapping' && layerType === 'polygon') {
-          // Generate Grid inside Polygon with 0 rotation initially
           simpleCoords = generateGridWaypoints(simpleCoords, currentSettings, 0);
+      } else {
+        simpleCoords = simpleCoords.map(p => ({...p, isEffort: true}));
       }
-      // --------------------------
 
       onRouteCreated(simpleCoords);
       layer.remove();
@@ -439,7 +472,7 @@ export const MapEditor: React.FC<MapProps> = ({
                 </LayersControl.BaseLayer>
                 <LayersControl.BaseLayer checked name={t("map_layer_sat", language)}>
                     <TileLayer
-                        attribution='Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+                        attribution='Tiles &copy; Esri'
                         url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
                     />
                 </LayersControl.BaseLayer>
@@ -472,21 +505,10 @@ export const MapEditor: React.FC<MapProps> = ({
 
             {routes.map((route) => (
                 <React.Fragment key={route.id}>
-                    <Polyline 
-                        positions={route.waypoints.map(wp => [wp.latitude, wp.longitude])}
-                        pathOptions={{ 
-                            color: route.locked ? '#888888' : route.color, 
-                            weight: 3,
-                            opacity: 0.8,
-                            dashArray: route.locked ? '5, 10' : undefined 
-                        }}
-                    >
-                        <Popup><strong>{route.name}</strong></Popup>
-                    </Polyline>
+                    <ColoredPath route={route} />
                     
                     <SegmentDistanceLabels route={route} />
                     
-                    {/* Render Rotation Handle if in Mapping Mode and rotation is tracked */}
                     {flightMode === 'mapping' && route.gridRotation !== undefined && (
                         <GridRotationHandle route={route} onRotate={onRotationUpdate} />
                     )}
@@ -525,6 +547,23 @@ export const MapEditor: React.FC<MapProps> = ({
                         );
                     })}
                 </React.Fragment>
+            ))}
+
+            {/* Render Battery Swap Points from Stats */}
+            {stats.swapPoints.map((pt, i) => (
+                <Marker 
+                    key={`swap-${i}`} 
+                    position={[pt.lat, pt.lng]} 
+                    icon={BatterySwapIcon}
+                    zIndexOffset={5000}
+                >
+                    <Popup>
+                        <div className="text-center font-bold text-orange-700">
+                            <div className="mb-1">{t("battery_swap_at", language)} #{pt.wpId}</div>
+                            <div className="text-xs text-slate-500 font-normal">{t("swap_note", language)}</div>
+                        </div>
+                    </Popup>
+                </Marker>
             ))}
 
             <RulerComponent active={measureMode} />
